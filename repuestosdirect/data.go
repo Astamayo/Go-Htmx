@@ -42,11 +42,11 @@ type Shop struct {
 type OrderStatus string
 
 const (
-	StatusPedido    OrderStatus = "Pedido"
-	StatusEnviado   OrderStatus = "Enviado"
-	StatusAduana    OrderStatus = "En aduana"
-	StatusLlegado   OrderStatus = "Llegado"
-	StatusListo     OrderStatus = "Listo para recoger"
+	StatusPedido  OrderStatus = "Pedido"
+	StatusEnviado OrderStatus = "Enviado"
+	StatusAduana  OrderStatus = "En aduana"
+	StatusLlegado OrderStatus = "Llegado"
+	StatusListo   OrderStatus = "Listo para recoger"
 )
 
 type OrderItem struct {
@@ -57,14 +57,14 @@ type OrderItem struct {
 }
 
 type Order struct {
-	ID        string
-	ShopID    string
-	Items     []OrderItem
-	Total     float64
-	OnCredit  bool
-	Status    OrderStatus
-	PlacedAt  time.Time
-	DueDate   time.Time // only relevant if OnCredit
+	ID       string
+	ShopID   string
+	Items    []OrderItem
+	Total    float64
+	OnCredit bool
+	Status   OrderStatus
+	PlacedAt time.Time
+	DueDate  time.Time // only relevant if OnCredit
 }
 
 // Store holds all in-memory data behind a mutex. In production this
@@ -124,6 +124,7 @@ func (s *Store) seed() {
 
 	// --- Shops (demo accounts) ---
 	shops := []*Shop{
+		{ID: "S-1000", Name: "Pop Store", Owner: "RepuestosDirect", Phone: "+1 809-123-4567", CreditLimit: 10000, CreditUsed: 0, CreditTerms: 30, PasswordDemo: "store123"},
 		{ID: "S-1001", Name: "Taller El Bravo", Owner: "Ramón Peña", Phone: "+1 809-555-0101", CreditLimit: 800, CreditUsed: 220, CreditTerms: 30, PasswordDemo: "1234"},
 		{ID: "S-1002", Name: "Auto Servicios Núñez", Owner: "Carla Núñez", Phone: "+1 829-555-0142", CreditLimit: 500, CreditUsed: 0, CreditTerms: 15, PasswordDemo: "1234"},
 		{ID: "S-1003", Name: "Mecánica Los Hermanos", Owner: "Julio y Freddy Matos", Phone: "+1 849-555-0187", CreditLimit: 1000, CreditUsed: 940, CreditTerms: 30, PasswordDemo: "1234"},
