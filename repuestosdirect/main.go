@@ -142,7 +142,7 @@ type adminData struct{ Rows []AgingRow }
 // Handlers
 // ---------------------------------------------------------------------
 
-func currentShop(r *http.Request, s *Session) *Shop {
+func currentShop(_ *http.Request, s *Session) *Shop {
 	if s.ShopID == "" {
 		return nil
 	}

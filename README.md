@@ -1,2 +1,0 @@
-# Go-Htmx
-Auparts App
