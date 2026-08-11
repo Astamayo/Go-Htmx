@@ -1,0 +1,67 @@
+{{define "page_cart"}}{{template "header" .}}
+<div class="bg-white border border-stone-200 rounded-lg p-5 shadow-sm">
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-4">Tu carrito</h1>
+
+  {{if .Error}}
+  <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>
+  {{end}}
+
+  {{if not .Items}}
+    <p class="text-sm text-stone-500">Tu carrito está vacío. <a href="/catalogo" class="text-[#1B2A4A] underline">Buscar repuestos</a></p>
+  {{else}}
+    <div class="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden mb-4">
+      {{range .Items}}
+      <div class="flex items-center justify-between px-4 py-3">
+        <div>
+          <p class="text-sm font-semibold">{{.Part.Name}}</p>
+          <p class="text-xs text-stone-500">
+            {{.Part.Make}} {{.Part.Model}} {{.Part.Year}} ·
+            {{if eq .Part.Source "local"}}en stock local{{else}}por pedido, 3 a 4 semanas{{end}}
+          </p>
+        </div>
+        <div class="flex items-center gap-3 text-sm">
+          <form hx-post="/cart/update" hx-target="body">
+            <input type="hidden" name="part_id" value="{{.Part.ID}}">
+            <input type="number" name="qty" value="{{.Qty}}" min="0" class="w-14 border border-stone-300 rounded px-2 py-1 text-sm"
+              onchange="this.form.requestSubmit()">
+          </form>
+          <span class="font-bold text-[#1B2A4A] w-16 text-right">${{printf "%.2f" .Subtotal}}</span>
+        </div>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="flex justify-end text-lg font-bold text-[#1B2A4A] mb-5">Total: ${{printf "%.2f" .Total}}</div>
+
+    {{if .Shop}}
+      <div class="bg-stone-50 border border-stone-200 rounded-lg p-4 mb-5 text-sm">
+        <p class="font-semibold text-stone-700 mb-1">Crédito de {{.Shop.Name}}</p>
+        <p class="text-stone-500">Límite: ${{printf "%.2f" .Shop.CreditLimit}} · Usado: ${{printf "%.2f" .Shop.CreditUsed}} · Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span> · Términos: {{.Shop.CreditTerms}} días</p>
+      </div>
+
+      <form method="POST" action="/order/place" class="flex flex-wrap gap-3 items-center">
+        <label class="text-sm flex items-center gap-2">
+          <input type="radio" name="payment" value="cash" checked> Pagar de contado
+        </label>
+        <label class="text-sm flex items-center gap-2 {{if lt .CreditAvailable .Total}}opacity-40{{end}}">
+          <input type="radio" name="payment" value="credit" {{if lt .CreditAvailable .Total}}disabled{{end}}> Usar crédito ({{.Shop.CreditTerms}} días)
+        </label>
+        <button class="ml-auto bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
+          Confirmar pedido
+        </button>
+      </form>
+    {{else}}
+      <p class="text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded px-3 py-2">
+        Para pagar a crédito y hacer seguimiento del pedido, <a href="/login" class="underline font-semibold">inicia sesión con tu taller</a>.
+        También puedes continuar como invitado pagando de contado.
+      </p>
+      <form method="POST" action="/order/place" class="mt-3">
+        <input type="hidden" name="payment" value="cash">
+        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
+          Confirmar pedido (contado, sin cuenta)
+        </button>
+      </form>
+    {{end}}
+  {{end}}
+</div>
+{{template "footer" .}}{{end}}

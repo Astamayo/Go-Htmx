@@ -1,0 +1,9 @@
+{{define "page_confirmation"}}{{template "header" .}}
+<div class="bg-white border border-stone-200 rounded-lg p-6 shadow-sm text-center">
+  <div class="text-4xl mb-2">✅</div>
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Pedido {{.Order.ID}} confirmado</h1>
+  <p class="text-sm text-stone-500 mb-4">Total: ${{printf "%.2f" .Order.Total}} · Estado: {{.Order.Status}}</p>
+  <p class="text-xs text-stone-400 mb-6">Se envió una confirmación por WhatsApp (ver consola del servidor en esta demo).</p>
+  <a href="/dashboard" class="text-[#1B2A4A] underline text-sm">Ver mis pedidos</a>
+</div>
+{{template "footer" .}}{{end}}

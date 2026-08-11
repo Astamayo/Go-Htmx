@@ -1,0 +1,6 @@
+{{define "cart_badge"}}
+<a id="cart-badge" href="/carrito" class="relative hover:text-[#C99A5B]">
+  🛒 Carrito
+  {{if gt . 0}}<span class="ml-1 bg-[#C99A5B] text-[#1B2A4A] text-xs font-bold rounded-full px-1.5 py-0.5">{{.}}</span>{{end}}
+</a>
+{{end}}

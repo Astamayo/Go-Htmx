@@ -1,0 +1,39 @@
+{{define "page_catalog"}}{{template "header" .}}
+<div class="bg-white border border-stone-200 rounded-lg p-5 shadow-sm">
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Buscar repuestos</h1>
+  <p class="text-sm text-stone-500 mb-4">Selecciona marca, modelo y año — como piensa un mecánico, no por código de producto.</p>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
+    <div>
+      <label class="block text-xs font-semibold text-stone-500 mb-1">Marca</label>
+      <select id="make" name="make"
+        class="w-full border border-stone-300 rounded px-3 py-2 text-sm"
+        hx-get="/partials/models" hx-target="#model" hx-trigger="change"
+        hx-include="[name='make']">
+        <option value="">Selecciona…</option>
+        {{range .Makes}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-stone-500 mb-1">Modelo</label>
+      <select id="model" name="model"
+        class="w-full border border-stone-300 rounded px-3 py-2 text-sm"
+        hx-get="/partials/years" hx-target="#year" hx-trigger="change"
+        hx-include="[name='make'],[name='model']">
+        <option value="">Primero elige marca</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-stone-500 mb-1">Año</label>
+      <select id="year" name="year"
+        class="w-full border border-stone-300 rounded px-3 py-2 text-sm"
+        hx-get="/partials/parts" hx-target="#results" hx-trigger="change"
+        hx-include="[name='make'],[name='model'],[name='year']">
+        <option value="">Primero elige modelo</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="results" class="mt-5"></div>
+</div>
+{{template "footer" .}}{{end}}
