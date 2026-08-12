@@ -124,7 +124,6 @@ func (s *Store) seed() {
 
 	// --- Shops (demo accounts) ---
 	shops := []*Shop{
-		{ID: "S-1000", Name: "Pop Store", Owner: "RepuestosDirect", Phone: "+1 809-123-4567", CreditLimit: 10000, CreditUsed: 0, CreditTerms: 30, PasswordDemo: "store123"},
 		{ID: "S-1001", Name: "Taller El Bravo", Owner: "Ramón Peña", Phone: "+1 809-555-0101", CreditLimit: 800, CreditUsed: 220, CreditTerms: 30, PasswordDemo: "1234"},
 		{ID: "S-1002", Name: "Auto Servicios Núñez", Owner: "Carla Núñez", Phone: "+1 829-555-0142", CreditLimit: 500, CreditUsed: 0, CreditTerms: 15, PasswordDemo: "1234"},
 		{ID: "S-1003", Name: "Mecánica Los Hermanos", Owner: "Julio y Freddy Matos", Phone: "+1 849-555-0187", CreditLimit: 1000, CreditUsed: 940, CreditTerms: 30, PasswordDemo: "1234"},
@@ -347,4 +346,34 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	}
 	s.Orders[o.ID] = o
 	return o, nil
+}
+
+// Add new shop to database
+
+func (s *Store) ShopNameTaken(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sh := range s.Shops {
+		if sh.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) AddShop(name, owner, phone, password string) *Shop {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sh := &Shop{
+		ID:           s.genID("S"),
+		Name:         name,
+		Owner:        owner,
+		Phone:        phone,
+		CreditLimit:  300, // starter limit; raise manually after a track record
+		CreditUsed:   0,
+		CreditTerms:  15,
+		PasswordDemo: password,
+	}
+	s.Shops[sh.ID] = sh
+	return sh
 }

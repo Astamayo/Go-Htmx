@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -357,6 +358,33 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleSignupGet(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s)})
+}
+
+func handleSignupPost(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	owner := strings.TrimSpace(r.FormValue("owner"))
+	phone := strings.TrimSpace(r.FormValue("phone"))
+	password := r.FormValue("password")
+
+	if name == "" || owner == "" || phone == "" || password == "" {
+		render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Completa todos los campos."})
+		return
+	}
+	if store.ShopNameTaken(name) {
+		render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Ya existe un taller con ese nombre."})
+		return
+	}
+
+	sh := store.AddShop(name, owner, phone, password)
+	s.ShopID = sh.ID
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
 // ---------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------
@@ -379,6 +407,8 @@ func main() {
 	mux.HandleFunc("GET /logout", handleLogout)
 	mux.HandleFunc("GET /dashboard", handleDashboard)
 	mux.HandleFunc("GET /admin", handleAdmin)
+	mux.HandleFunc("GET /signup", handleSignupGet)
+	mux.HandleFunc("POST /signup", handleSignupPost)
 
 	addr := ":8080"
 	log.Println("RepuestosDirect escuchando en http://localhost" + addr)
