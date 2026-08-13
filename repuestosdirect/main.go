@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -410,7 +411,12 @@ func main() {
 	mux.HandleFunc("GET /signup", handleSignupGet)
 	mux.HandleFunc("POST /signup", handleSignupPost)
 
-	addr := ":8080"
-	log.Println("RepuestosDirect escuchando en http://localhost" + addr)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	addr := ":" + port
+	log.Printf("RepuestosDirect escuchando en %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
