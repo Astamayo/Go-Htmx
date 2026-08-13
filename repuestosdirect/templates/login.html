@@ -2,8 +2,7 @@
 <div class="max-w-sm mx-auto mt-10 bg-white border border-stone-200 rounded-lg p-6 shadow-sm">
   <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Entrar a tu cuenta</h1>
   <p class="text-sm text-stone-500 mb-5">Talleres registrados — pedidos, crédito y estado de envíos.</p>
-  <p class="helper-link">¿Nuevo taller? <a href="/signup" class="text-[#1B2A4A] underline font-semibold">Crea tu
-      cuenta</a></p>
+
 
   {{if .Error}}
   <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>
@@ -26,8 +25,12 @@
     </button>
   </form>
 
+  <p class="text-xs text-stone-400 mt-4">¿Nuevo taller? <a href="/signup"
+      class="text-[#1B2A4A] underline font-semibold">Crea tu
+      cuenta</a></p>
+
   <p class="text-xs text-stone-400 mt-4">
-    ¿Solo quieres ver el catálogo? <a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública</a>
-  </p>
+    ¿Solo quieres ver el catálogo? <a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública
+    </a></p>
 </div>
 {{template "footer" .}}{{end}}
