@@ -178,6 +178,18 @@ func (s *Store) seedInitialData() {
 	`)
 }
 
+// Actualiza el estado de un pedido
+func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) error {
+	_, err := s.db.Exec("UPDATE orders SET status = $1 WHERE id = $2", string(status), orderID)
+	return err
+}
+
+// Elimina un repuesto (Solo funcionará si no está en un pedido existente)
+func (s *Store) DeletePart(partID string) error {
+	_, err := s.db.Exec("DELETE FROM parts WHERE id = $1", partID)
+	return err
+}
+
 // --- Store Queries ---
 
 func (s *Store) Makes() []string {

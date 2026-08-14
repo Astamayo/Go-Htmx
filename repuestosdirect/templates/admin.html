@@ -1,28 +1,36 @@
 {{define "page_admin"}}{{template "header" .}}
 
-<div class="flex justify-between items-center mb-4">
-  <div>
-    <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Panel de administración</h1>
-    <p class="text-sm text-stone-500">Antigüedad de cuentas por cobrar — el número más importante del negocio.</p>
-  </div>
-  <div class="flex gap-2">
-    <!-- Links to other admin areas to make navigation easier -->
-    <a href="/admin/shops"
-      class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md transition border border-stone-200">
-      Talleres Pendientes
-    </a>
-    <a href="/admin/inventory"
-      class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md transition border border-stone-200">
-      Ver Inventario
-    </a>
-    <a href="/admin/inventory/add"
-      class="text-sm font-medium text-white bg-[#1B2A4A] hover:bg-blue-800 px-4 py-2 rounded-md transition">
-      + Agregar Repuesto
-    </a>
-  </div>
+<div class="mb-6">
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Panel de administración</h1>
+  <p class="text-sm text-stone-500">Centro de control del negocio.</p>
 </div>
 
+<!-- Menú de Acceso Rápido -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+  <a href="/admin/orders"
+    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">📦 Pedidos</h3>
+    <p class="text-xs text-stone-500 mt-1">Actualizar estados</p>
+  </a>
+  <a href="/driver" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">🚚 Repartidor</h3>
+    <p class="text-xs text-stone-500 mt-1">Vista móvil de rutas</p>
+  </a>
+  <a href="/admin/inventory"
+    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">⚙️ Inventario</h3>
+    <p class="text-xs text-stone-500 mt-1">Gestión de piezas</p>
+  </a>
+  <a href="/admin/shops"
+    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">✅ Aprobaciones</h3>
+    <p class="text-xs text-stone-500 mt-1">Nuevos talleres</p>
+  </a>
+</div>
+
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Cuentas por cobrar</h2>
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+  <!-- (Tu tabla actual de Cuentas por Cobrar va aquí) -->
   <table class="w-full text-sm">
     <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
       <tr>
@@ -42,7 +50,7 @@
         <td class="px-4 py-2 text-stone-500">{{.Order.DueDate.Format "02 Jan 2006"}}</td>
         <td class="px-4 py-2">
           {{if .Overdue}}
-          <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido ({{.DaysOverdue}} días)</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido</span>
           {{else}}
           <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Al día</span>
           {{end}}

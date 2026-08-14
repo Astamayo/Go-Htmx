@@ -1,0 +1,44 @@
+{{define "page_admin_orders"}}
+{{template "header" .}}
+
+<div class="flex justify-between items-center mb-4">
+    <h1 class="text-xl font-bold text-[#1B2A4A]">Gestión de Pedidos</h1>
+    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 px-4 py-2 rounded-md">Volver al Panel</a>
+</div>
+
+<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
+            <tr>
+                <th class="text-left px-4 py-2">ID Pedido</th>
+                <th class="text-left px-4 py-2">Fecha</th>
+                <th class="text-left px-4 py-2">Estado Actual</th>
+                <th class="text-left px-4 py-2">Actualizar a...</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-200">
+            {{range .Orders}}
+            <tr>
+                <td class="px-4 py-3 font-medium">{{.ID}}</td>
+                <td class="px-4 py-3">{{.PlacedAt.Format "02 Jan 2006"}}</td>
+                <td class="px-4 py-3 font-semibold text-blue-800">{{.Status}}</td>
+                <td class="px-4 py-3">
+                    <form action="/admin/orders/status" method="POST" class="flex gap-2">
+                        <input type="hidden" name="order_id" value="{{.ID}}">
+                        <select name="status" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white">
+                            <option value="Pedido">Pedido (Recibido)</option>
+                            <option value="Enviado">Enviado</option>
+                            <option value="En aduana">En aduana</option>
+                            <option value="Listo para recoger">Listo para recoger</option>
+                            <option value="Llegado">Llegado / Entregado</option>
+                        </select>
+                        <button type="submit"
+                            class="bg-[#1B2A4A] text-white px-3 py-1 rounded hover:bg-blue-800 text-xs">Actualizar</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{template "footer" .}}{{end}}

@@ -79,6 +79,14 @@ type deliveryData struct{ Pending []*Order }
 
 type pendingData struct{ Shops []*Shop }
 
+type orderManageData struct{ Orders []*Order }
+
+type DriverRoute struct {
+	Order *Order
+	Shop  *Shop
+}
+type driverData struct{ Routes []DriverRoute }
+
 func render(w http.ResponseWriter, page string, pd PageData) {
 	type ctx struct {
 		Title           string
@@ -95,6 +103,7 @@ func render(w http.ResponseWriter, page string, pd PageData) {
 		Rows            []AgingRow
 		StockRows       []StockRow
 		Pending         []*Order
+		DriverRoutes    []DriverRoute
 	}
 	c := ctx{Title: pd.Title, Shop: pd.Shop, CartCount: pd.CartCount, Error: pd.Error}
 	switch d := pd.Data.(type) {
@@ -119,6 +128,10 @@ func render(w http.ResponseWriter, page string, pd PageData) {
 		c.Pending = d.Pending
 	case pendingData:
 		c.Shops = d.Shops
+	case orderManageData:
+		c.Orders = d.Orders
+	case driverData:
+		c.DriverRoutes = d.Routes
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
@@ -512,22 +525,63 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 		Error:     "¡Cuenta creada! Espera a que un administrador la apruebe.",
 		Data:      loginData{Shops: shops},
 	})
-} 
+}
 
 func handleAdminShops(w http.ResponseWriter, r *http.Request) {
-    s := getSession(w, r)
-    render(w, "page_admin_shops", PageData{
-        Title: "Aprobar Talleres", 
-        Shop: currentShop(r, s), 
-        CartCount: cartCount(s),
-        Data: pendingData{Shops: store.PendingShops()},
-    })
+	s := getSession(w, r)
+	render(w, "page_admin_shops", PageData{
+		Title:     "Aprobar Talleres",
+		Shop:      currentShop(r, s),
+		CartCount: cartCount(s),
+		Data:      pendingData{Shops: store.PendingShops()},
+	})
 }
 
 func handleAdminShopApprove(w http.ResponseWriter, r *http.Request) {
-    r.ParseForm()
-    store.ApproveShop(r.FormValue("shop_id"))
-    http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
+	r.ParseForm()
+	store.ApproveShop(r.FormValue("shop_id"))
+	http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
+}
+
+func handleAdminOrders(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, "page_admin_orders", PageData{
+		Title: "Gestión de Pedidos", Shop: currentShop(r, s), CartCount: cartCount(s),
+		Data: orderManageData{Orders: store.AllOrdersSortedByDue()},
+	})
+}
+
+func handleAdminOrderStatus(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	store.UpdateOrderStatus(r.FormValue("order_id"), OrderStatus(r.FormValue("status")))
+	http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
+}
+
+func handleAdminInventoryDelete(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	err := store.DeletePart(r.FormValue("part_id"))
+	if err != nil {
+		log.Println("Error deleting part (might be in an order):", err)
+	}
+	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
+}
+
+func handleDriverDashboard(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	var routes []DriverRoute
+
+	// Mostrar todos los pedidos que no han sido entregados ("Llegado" / "Listo")
+	for _, o := range store.AllOrdersSortedByDue() {
+		if o.Status != StatusLlegado && o.Status != StatusListo {
+			sh, _ := store.Shop(o.ShopID)
+			routes = append(routes, DriverRoute{Order: o, Shop: sh})
+		}
+	}
+
+	render(w, "page_driver", PageData{
+		Title: "Ruta de Repartidor", Shop: currentShop(r, s), CartCount: cartCount(s),
+		Data: driverData{Routes: routes},
+	})
 }
 
 // ---------------------------------------------------------------------
@@ -578,8 +632,15 @@ func main() {
 
 	// Signup
 	mux.HandleFunc("GET /admin/shops", requireAdmin(handleAdminShops))
-    mux.HandleFunc("POST /admin/shops/approve", requireAdmin(handleAdminShopApprove))
+	mux.HandleFunc("POST /admin/shops/approve", requireAdmin(handleAdminShopApprove))
 
+	// Delivery
+	mux.HandleFunc("GET /admin/orders", requireAdmin(handleAdminOrders))
+	mux.HandleFunc("POST /admin/orders/status", requireAdmin(handleAdminOrderStatus))
+	mux.HandleFunc("POST /admin/inventory/delete", requireAdmin(handleAdminInventoryDelete))
+
+	// Ruta para el conductor (Protegida por admin para este demo)
+	mux.HandleFunc("GET /driver", requireAdmin(handleDriverDashboard))
 	if port == "" {
 		port = "8080"
 	}
