@@ -154,6 +154,10 @@ func (s *Store) initTables() error {
 	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS address VARCHAR(500) NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS availability VARCHAR(100) NOT NULL DEFAULT 'En stock'`)
 
+	s.db.Exec(`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_part_id_fkey`)
+	s.db.Exec(`ALTER TABLE order_items ALTER COLUMN part_id DROP NOT NULL`)
+	s.db.Exec(`ALTER TABLE order_items ADD CONSTRAINT order_items_part_id_fkey FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE SET NULL`)
+
 	//s.seedInitialData()
 	return nil
 }
