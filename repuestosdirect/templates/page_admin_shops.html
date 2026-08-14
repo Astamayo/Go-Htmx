@@ -1,0 +1,55 @@
+{{define "page_admin_shops"}}
+{{template "header" .}}
+
+<div class="flex justify-between items-center mb-4">
+    <div>
+        <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Talleres Pendientes</h1>
+        <p class="text-sm text-stone-500">Aprueba nuevos talleres para que puedan acceder al crédito y comprar.</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/admin"
+            class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md transition">Volver
+            al Panel</a>
+    </div>
+</div>
+
+<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
+            <tr>
+                <th class="text-left px-4 py-2">ID</th>
+                <th class="text-left px-4 py-2">Taller</th>
+                <th class="text-left px-4 py-2">Dueño</th>
+                <th class="text-left px-4 py-2">Teléfono</th>
+                <th class="text-right px-4 py-2">Acción</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-200">
+            {{if not .Shops}}
+            <tr>
+                <td colspan="5" class="px-4 py-8 text-center text-stone-500">No hay talleres pendientes de aprobación.
+                </td>
+            </tr>
+            {{else}}
+            {{range .Shops}}
+            <tr class="hover:bg-stone-50">
+                <td class="px-4 py-3 font-medium">{{.ID}}</td>
+                <td class="px-4 py-3">{{.Name}}</td>
+                <td class="px-4 py-3">{{.Owner}}</td>
+                <td class="px-4 py-3 text-stone-500">{{.Phone}}</td>
+                <td class="px-4 py-3 text-right">
+                    <form action="/admin/shops/approve" method="POST" class="inline">
+                        <input type="hidden" name="shop_id" value="{{.ID}}">
+                        <button type="submit"
+                            class="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-emerald-700 transition">Aprobar</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+{{end}}

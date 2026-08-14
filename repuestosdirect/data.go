@@ -37,6 +37,7 @@ type Shop struct {
 	CreditUsed   float64
 	CreditTerms  int
 	PasswordDemo string
+	Approved     bool
 }
 
 type OrderStatus string
@@ -144,6 +145,9 @@ func (s *Store) initTables() error {
 	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS reorder_point INT NOT NULL DEFAULT 5`)
 	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
+
+	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE`)
+	s.db.Exec(`UPDATE shops SET approved = TRUE`)
 
 	//s.seedInitialData()
 	return nil
@@ -315,9 +319,9 @@ func (s *Store) Part(id string) (Part, bool) {
 }
 
 func (s *Store) Shop(id string) (*Shop, bool) {
-	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo FROM shops WHERE id = $1`
+	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE id = $1`
 	sh := &Shop{}
-	err := s.db.QueryRow(query, id).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo)
+	err := s.db.QueryRow(query, id).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
 	if err != nil {
 		return nil, false
 	}
@@ -325,9 +329,9 @@ func (s *Store) Shop(id string) (*Shop, bool) {
 }
 
 func (s *Store) ShopByLogin(name, password string) (*Shop, bool) {
-	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo FROM shops WHERE name = $1 AND password_demo = $2`
+	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE name = $1 AND password_demo = $2`
 	sh := &Shop{}
-	err := s.db.QueryRow(query, name, password).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo)
+	err := s.db.QueryRow(query, name, password).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
 	if err != nil {
 		return nil, false
 	}
@@ -344,9 +348,8 @@ func (s *Store) ShopNameTaken(name string) bool {
 }
 
 func (s *Store) AllShops() []*Shop {
-	rows, err := s.db.Query("SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo FROM shops ORDER BY name ASC")
+	rows, err := s.db.Query("SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops ORDER BY name ASC")
 	if err != nil {
-		log.Println("AllShops error:", err)
 		return nil
 	}
 	defer rows.Close()
@@ -354,7 +357,7 @@ func (s *Store) AllShops() []*Shop {
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo); err == nil {
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved); err == nil {
 			shops = append(shops, sh)
 		}
 	}
@@ -370,19 +373,40 @@ func (s *Store) AddShop(name, owner, phone, password string) *Shop {
 	}
 	id := fmt.Sprintf("S-%04d", seq)
 
-	query := `INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo)
-              VALUES ($1, $2, $3, $4, 300.00, 0.00, 15, $5)
-              RETURNING id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo`
-
+	// Note: 'approved' defaults to FALSE via the database schema
+	query := `INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved)
+              VALUES ($1, $2, $3, $4, 300.00, 0.00, 15, $5, FALSE)
+              RETURNING id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved`
 	sh := &Shop{}
 	err = s.db.QueryRow(query, id, name, owner, phone, password).Scan(
-		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo,
+		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved,
 	)
 	if err != nil {
-		log.Println("AddShop error:", err)
 		return nil
 	}
 	return sh
+}
+
+func (s *Store) PendingShops() []*Shop {
+	rows, err := s.db.Query("SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE approved = FALSE ORDER BY id ASC")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var shops []*Shop
+	for rows.Next() {
+		sh := &Shop{}
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved); err == nil {
+			shops = append(shops, sh)
+		}
+	}
+	return shops
+}
+
+func (s *Store) ApproveShop(id string) error {
+	_, err := s.db.Exec("UPDATE shops SET approved = TRUE WHERE id = $1", id)
+	return err
 }
 
 func (s *Store) AddPart(make, model, category, name, source string, year, stock, reorderPoint int, price float64) error {

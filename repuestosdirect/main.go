@@ -77,6 +77,8 @@ type PageData struct {
 type inventoryData struct{ StockRows []StockRow }
 type deliveryData struct{ Pending []*Order }
 
+type pendingData struct{ Shops []*Shop }
+
 func render(w http.ResponseWriter, page string, pd PageData) {
 	type ctx struct {
 		Title           string
@@ -115,6 +117,8 @@ func render(w http.ResponseWriter, page string, pd PageData) {
 		c.StockRows = d.StockRows
 	case deliveryData:
 		c.Pending = d.Pending
+	case pendingData:
+		c.Shops = d.Shops
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
@@ -373,9 +377,16 @@ func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	pass := r.FormValue("password")
 	sh, ok := store.ShopByLogin(name, pass)
+
+	shops := store.AllShops()
 	if !ok {
-		shops := store.AllShops()
 		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops}})
+		return
+	}
+
+	// Check if the shop is approved!
+	if !sh.Approved {
+		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Tu cuenta está pendiente de revisión. No puedes entrar todavía.", Data: loginData{Shops: shops}})
 		return
 	}
 
@@ -491,11 +502,32 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sh := store.AddShop(name, owner, phone, password)
-	s.Mu.Lock()
-	s.ShopID = sh.ID
-	s.Mu.Unlock()
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	store.AddShop(name, owner, phone, password)
+
+	// Send them to login screen with a message instead of logging them in
+	shops := store.AllShops()
+	render(w, "page_login", PageData{
+		Title:     "Entrar",
+		CartCount: cartCount(s),
+		Error:     "¡Cuenta creada! Espera a que un administrador la apruebe.",
+		Data:      loginData{Shops: shops},
+	})
+} 
+
+func handleAdminShops(w http.ResponseWriter, r *http.Request) {
+    s := getSession(w, r)
+    render(w, "page_admin_shops", PageData{
+        Title: "Aprobar Talleres", 
+        Shop: currentShop(r, s), 
+        CartCount: cartCount(s),
+        Data: pendingData{Shops: store.PendingShops()},
+    })
+}
+
+func handleAdminShopApprove(w http.ResponseWriter, r *http.Request) {
+    r.ParseForm()
+    store.ApproveShop(r.FormValue("shop_id"))
+    http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
 }
 
 // ---------------------------------------------------------------------
@@ -543,6 +575,11 @@ func main() {
 	mux.HandleFunc("GET /admin/inventory/add", requireAdmin(handleInventoryAddGet))
 	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(handleInventoryAddPost))
 	port := os.Getenv("PORT")
+
+	// Signup
+	mux.HandleFunc("GET /admin/shops", requireAdmin(handleAdminShops))
+    mux.HandleFunc("POST /admin/shops/approve", requireAdmin(handleAdminShopApprove))
+
 	if port == "" {
 		port = "8080"
 	}
