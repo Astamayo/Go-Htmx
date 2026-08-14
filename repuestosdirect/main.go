@@ -183,14 +183,20 @@ func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func currentShop(_ *http.Request, s *Session) *Shop {
-	if s.ShopID == "" {
+	s.Mu.RLock()
+	shopID := s.ShopID
+	s.Mu.RUnlock()
+
+	if shopID == "" {
 		return nil
 	}
-	sh, _ := store.Shop(s.ShopID)
+	sh, _ := store.Shop(shopID)
 	return sh
 }
 
 func cartCount(s *Session) int {
+	s.Mu.RLock()
+	defer s.Mu.RUnlock()
 	n := 0
 	for _, q := range s.Cart {
 		n += q
@@ -233,7 +239,9 @@ func handleCartAdd(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	partID := r.FormValue("part_id")
 	if _, ok := store.Part(partID); ok {
+		s.Mu.Lock()
 		s.Cart[partID]++
+		s.Mu.Unlock()
 	}
 	tmpl.ExecuteTemplate(w, "cart_badge", cartCount(s))
 }
@@ -243,18 +251,31 @@ func handleCartUpdate(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	partID := r.FormValue("part_id")
 	qty, _ := strconv.Atoi(r.FormValue("qty"))
+
+	// Add Lock here!
+	s.Mu.Lock()
 	if qty <= 0 {
 		delete(s.Cart, partID)
 	} else {
 		s.Cart[partID] = qty
 	}
+	s.Mu.Unlock()
+	// Unlock before redirecting
+
 	http.Redirect(w, r, "/carrito", http.StatusSeeOther)
 }
 
 func buildCartData(s *Session, sh *Shop) cartData {
+	s.Mu.RLock()
+	cartCopy := make(map[string]int, len(s.Cart))
+	for k, v := range s.Cart {
+		cartCopy[k] = v
+	}
+	s.Mu.RUnlock()
+
 	var items []CartLine
 	var total float64
-	for pid, qty := range s.Cart {
+	for pid, qty := range cartCopy {
 		p, ok := store.Part(pid)
 		if !ok {
 			continue
@@ -286,6 +307,9 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 	payment := r.FormValue("payment")
 
 	var items []OrderItem
+
+	// Add the read lock here!
+	s.Mu.RLock()
 	for pid, qty := range s.Cart {
 		p, ok := store.Part(pid)
 		if !ok {
@@ -293,6 +317,8 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, OrderItem{PartID: p.ID, PartName: p.Name, Qty: qty, UnitUSD: p.PriceUSD})
 	}
+	s.Mu.RUnlock()
+
 	if len(items) == 0 {
 		http.Redirect(w, r, "/catalogo", http.StatusSeeOther)
 		return
@@ -312,7 +338,10 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clear the cart after placing the order
+	s.Mu.Lock()
 	s.Cart = map[string]int{}
+	s.Mu.Unlock()
 
 	if sh != nil {
 		msg := "Hola " + sh.Owner + ", tu pedido " + order.ID + " por $" + strconv.FormatFloat(order.Total, 'f', 2, 64) + " fue confirmado. Estado: " + string(order.Status) + "."
@@ -334,6 +363,7 @@ func handleLoginGet(w http.ResponseWriter, r *http.Request) {
 func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	r.ParseForm()
+
 	name := r.FormValue("name")
 	pass := r.FormValue("password")
 	sh, ok := store.ShopByLogin(name, pass)
@@ -342,23 +372,33 @@ func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops}})
 		return
 	}
+
+	s.Mu.Lock()
 	s.ShopID = sh.ID
+	s.Mu.Unlock()
+
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
+
+	s.Mu.Lock()
 	s.ShopID = ""
+	s.Mu.Unlock()
+
 	http.Redirect(w, r, "/catalogo", http.StatusSeeOther)
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	sh := currentShop(r, s)
+
 	if sh == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+
 	orders := store.OrdersFor(sh.ID)
 	render(w, "page_dashboard", PageData{
 		Title: "Panel", Shop: sh, CartCount: cartCount(s),
@@ -413,7 +453,9 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sh := store.AddShop(name, owner, phone, password)
+	s.Mu.Lock()
 	s.ShopID = sh.ID
+	s.Mu.Unlock()
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 

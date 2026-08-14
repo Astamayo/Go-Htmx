@@ -133,6 +133,8 @@ func (s *Store) initTables() error {
 		qty INT NOT NULL,
 		unit_usd NUMERIC(10,2) NOT NULL
 	);
+	CREATE SEQUENCE IF NOT EXISTS order_id_seq;
+	CREATE SEQUENCE IF NOT EXISTS shop_id_seq;
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -359,16 +361,20 @@ func (s *Store) AllShops() []*Shop {
 }
 
 func (s *Store) AddShop(name, owner, phone, password string) *Shop {
-	var count int
-	s.db.QueryRow("SELECT COUNT(*) FROM shops").Scan(&count)
-	id := fmt.Sprintf("S-%04d", count+1)
+	var seq int
+	err := s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
+	if err != nil {
+		log.Println("Error generating shop ID:", err)
+		return nil
+	}
+	id := fmt.Sprintf("S-%04d", seq)
 
 	query := `INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo)
-	          VALUES ($1, $2, $3, $4, 300.00, 0.00, 15, $5)
-	          RETURNING id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo`
+              VALUES ($1, $2, $3, $4, 300.00, 0.00, 15, $5)
+              RETURNING id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo`
 
 	sh := &Shop{}
-	err := s.db.QueryRow(query, id, name, owner, phone, password).Scan(
+	err = s.db.QueryRow(query, id, name, owner, phone, password).Scan(
 		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo,
 	)
 	if err != nil {
@@ -407,9 +413,12 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 		}
 	}
 
-	var count int
-	tx.QueryRow("SELECT COUNT(*) FROM orders").Scan(&count)
-	orderID := fmt.Sprintf("ORD-%04d", count+1)
+	var seq int
+	err = tx.QueryRow("SELECT nextval('order_id_seq')").Scan(&seq)
+	if err != nil {
+		return nil, fmt.Errorf("error generating order id: %w", err)
+	}
+	orderID := fmt.Sprintf("ORD-%04d", seq)
 
 	placedAt := time.Now()
 	dueDate := placedAt.AddDate(0, 0, terms)
