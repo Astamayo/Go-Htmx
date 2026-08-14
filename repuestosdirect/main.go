@@ -13,12 +13,15 @@ import (
 	"time"
 )
 
+// Global store reference
+var store *Store
+
 // ---------------------------------------------------------------------
-// Sessions (in-memory, cookie-based). Stands in for Redis-backed
-// sessions in production. See README.md.
+// Sessions
 // ---------------------------------------------------------------------
 
 type Session struct {
+	Mu     sync.RWMutex
 	ShopID string
 	Cart   map[string]int // partID -> qty
 }
@@ -72,16 +75,11 @@ type PageData struct {
 }
 
 func render(w http.ResponseWriter, page string, pd PageData) {
-	// Each page is its own top-level named template (e.g. "page_catalog")
-	// that includes the shared "header"/"footer" partials. Named blocks
-	// in Go's html/template are global to the parsed set, so giving each
-	// page a unique name avoids collisions between files.
 	type ctx struct {
-		Title     string
-		Shop      *Shop
-		CartCount int
-		Error     string
-		// dashboard/admin/cart/catalog specific
+		Title           string
+		Shop            *Shop
+		CartCount       int
+		Error           string
 		Makes           []string
 		Shops           []*Shop
 		Items           []CartLine
@@ -274,7 +272,6 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// clear cart
 	s.Cart = map[string]int{}
 
 	if sh != nil {
@@ -290,10 +287,7 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 
 func handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	var shops []*Shop
-	for _, sh := range store.Shops {
-		shops = append(shops, sh)
-	}
+	shops := store.AllShops()
 	render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Data: loginData{Shops: shops}})
 }
 
@@ -304,10 +298,7 @@ func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	pass := r.FormValue("password")
 	sh, ok := store.ShopByLogin(name, pass)
 	if !ok {
-		var shops []*Shop
-		for _, x := range store.Shops {
-			shops = append(shops, x)
-		}
+		shops := store.AllShops()
 		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops}})
 		return
 	}
@@ -393,6 +384,17 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 func main() {
 	loadTemplates()
 
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatal("DATABASE_URL environment variable is required")
+	}
+
+	var err error
+	store, err = NewPostgresStore(connStr)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleHome)
 	mux.HandleFunc("GET /catalogo", handleCatalog)
@@ -412,11 +414,11 @@ func main() {
 	mux.HandleFunc("POST /signup", handleSignupPost)
 
 	port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
-    }
+	if port == "" {
+		port = "8080"
+	}
 
-    addr := ":" + port
-    log.Printf("RepuestosDirect escuchando en %s", addr)
-    log.Fatal(http.ListenAndServe(addr, mux))
+	addr := ":" + port
+	log.Printf("RepuestosDirect escuchando en %s", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
 }
