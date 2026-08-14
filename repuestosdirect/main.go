@@ -477,19 +477,14 @@ func handleInventoryAddPost(w http.ResponseWriter, r *http.Request) {
 	category := r.FormValue("category")
 	name := r.FormValue("name")
 	source := r.FormValue("source")
+	availability := r.FormValue("availability") // NEW
 
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	stock, _ := strconv.Atoi(r.FormValue("stock"))
 	reorder, _ := strconv.Atoi(r.FormValue("reorder_point"))
 	price, _ := strconv.ParseFloat(r.FormValue("price_usd"), 64)
 
-	err := store.AddPart(makeStr, model, category, name, source, year, stock, reorder, price)
-	if err != nil {
-		log.Println("Error adding part:", err)
-		// You could render the form again with an error message here
-	}
-
-	// Redirect back to the inventory table after saving
+	store.AddPart(makeStr, model, category, name, source, year, stock, reorder, price, availability)
 	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
 }
 
@@ -504,9 +499,10 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	owner := strings.TrimSpace(r.FormValue("owner"))
 	phone := strings.TrimSpace(r.FormValue("phone"))
+	address := strings.TrimSpace(r.FormValue("address")) // NEW
 	password := r.FormValue("password")
 
-	if name == "" || owner == "" || phone == "" || password == "" {
+	if name == "" || owner == "" || phone == "" || address == "" || password == "" {
 		render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Completa todos los campos."})
 		return
 	}
@@ -515,16 +511,10 @@ func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store.AddShop(name, owner, phone, password)
+	store.AddShop(name, owner, phone, address, password)
 
-	// Send them to login screen with a message instead of logging them in
 	shops := store.AllShops()
-	render(w, "page_login", PageData{
-		Title:     "Entrar",
-		CartCount: cartCount(s),
-		Error:     "¡Cuenta creada! Espera a que un administrador la apruebe.",
-		Data:      loginData{Shops: shops},
-	})
+	render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "¡Cuenta creada! Espera a que un administrador la apruebe.", Data: loginData{Shops: shops}})
 }
 
 func handleAdminShops(w http.ResponseWriter, r *http.Request) {
@@ -553,7 +543,19 @@ func handleAdminOrders(w http.ResponseWriter, r *http.Request) {
 
 func handleAdminOrderStatus(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	store.UpdateOrderStatus(r.FormValue("order_id"), OrderStatus(r.FormValue("status")))
+	orderID := r.FormValue("order_id")
+	newStatus := OrderStatus(r.FormValue("status"))
+
+	store.UpdateOrderStatus(orderID, newStatus)
+
+	// Send message to driver when order is ready
+	if newStatus == StatusListo {
+		driverPhone := os.Getenv("DRIVER_PHONE")
+		if driverPhone != "" {
+			SendWhatsApp(driverPhone, "📦 Nuevo pedido listo para recoger en almacén: "+orderID)
+		}
+	}
+
 	http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
 }
 

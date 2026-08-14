@@ -29,7 +29,7 @@
                 <th class="text-left px-4 py-2">Precio (USD)</th>
                 <th class="text-center px-4 py-2">Stock</th>
                 <th class="text-center px-4 py-2">Estado</th>
-                <th class="text-right px-4 py-2">Acción</th> <!-- Neva Columna -->
+                <th class="text-right px-4 py-2">Acción</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-stone-200">
@@ -54,6 +54,13 @@
                 <td class="px-4 py-3 font-medium text-emerald-700">${{printf "%.2f" .Part.PriceUSD}}</td>
                 <td class="px-4 py-3 text-center font-bold">{{.Part.Stock}}</td>
                 <td class="px-4 py-3 text-center">
+
+                    <!-- Badge "Por Pedido" agregado aquí correctamente -->
+                    {{if eq .Part.Availability "Por pedido — 3 a 4 semanas"}}
+                    <span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800 font-medium block mb-1">Por
+                        Pedido</span>
+                    {{end}}
+
                     {{if eq .Status "out"}}
                     <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">Agotado</span>
                     {{else if eq .Status "reorder"}}
@@ -63,6 +70,7 @@
                     <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">Stock
                         OK</span>
                     {{end}}
+
                 </td>
                 <td class="px-4 py-3 text-right">
                     <!-- Botón Eliminar -->

@@ -20,8 +20,10 @@
             </div>
 
             <div class="bg-stone-50 rounded p-3 mb-4 text-sm text-stone-600">
+                <p class="flex items-start gap-2 mb-2">📍 <span>{{.Shop.Address}}</span></p>
                 <p class="flex items-center gap-2 mb-1">📞 <a href="tel:{{.Shop.Phone}}"
                         class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
+                class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
                 <p class="flex items-center gap-2 mb-1">📦 Pedido: <strong>{{.Order.ID}}</strong></p>
                 <p class="flex items-center gap-2">💰 Cobrar a Crédito: <strong>${{printf "%.2f" .Order.Total}}</strong>
                 </p>

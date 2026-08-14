@@ -21,6 +21,7 @@ type Part struct {
 	Stock        int
 	Courier      string
 	ReorderPoint int
+	Availability string
 }
 
 type StockRow struct {
@@ -33,6 +34,7 @@ type Shop struct {
 	Name         string
 	Owner        string
 	Phone        string
+	Address      string
 	CreditLimit  float64
 	CreditUsed   float64
 	CreditTerms  int
@@ -149,6 +151,9 @@ func (s *Store) initTables() error {
 	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE`)
 	s.db.Exec(`UPDATE shops SET approved = TRUE`)
 
+	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS address VARCHAR(500) NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS availability VARCHAR(100) NOT NULL DEFAULT 'En stock'`)
+
 	//s.seedInitialData()
 	return nil
 }
@@ -247,16 +252,12 @@ func (s *Store) Years(make, model string) []int {
 }
 
 func (s *Store) StockReport() []StockRow {
-	rows, err := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point
-		FROM parts WHERE stock > 0 OR source = 'OEM USA' ORDER BY name`)
-	if err != nil {
-		return nil
-	}
+	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability FROM parts ORDER BY name`)
 	defer rows.Close()
 	var out []StockRow
 	for rows.Next() {
 		var p Part
-		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint)
+		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint, &p.Availability)
 		status := "ok"
 		if p.Stock == 0 {
 			status = "out"
@@ -301,53 +302,36 @@ func (s *Store) AssignCourier(orderID, courier string) error {
 }
 
 func (s *Store) PartsFor(make, model string, year int) []Part {
-	query := `SELECT id, make, model, year, category, name, source, price_usd, stock 
-	          FROM parts WHERE make = $1 AND model = $2 AND year = $3`
-	rows, err := s.db.Query(query, make, model, year)
-	if err != nil {
-		log.Println("PartsFor query error:", err)
-		return nil
-	}
+	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, availability FROM parts WHERE make = $1 AND model = $2 AND year = $3`, make, model, year)
 	defer rows.Close()
-
 	var parts []Part
 	for rows.Next() {
 		var p Part
-		if err := rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock); err == nil {
-			parts = append(parts, p)
-		}
+		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability)
+		parts = append(parts, p)
 	}
 	return parts
 }
 
 func (s *Store) Part(id string) (Part, bool) {
-	query := `SELECT id, make, model, year, category, name, source, price_usd, stock FROM parts WHERE id = $1`
 	var p Part
-	err := s.db.QueryRow(query, id).Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock)
-	if err != nil {
-		return Part{}, false
-	}
-	return p, true
+	err := s.db.QueryRow(`SELECT id, make, model, year, category, name, source, price_usd, stock, availability FROM parts WHERE id = $1`, id).
+		Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability)
+	return p, err == nil
 }
 
 func (s *Store) Shop(id string) (*Shop, bool) {
-	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE id = $1`
 	sh := &Shop{}
-	err := s.db.QueryRow(query, id).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
-	if err != nil {
-		return nil, false
-	}
-	return sh, true
+	err := s.db.QueryRow(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE id = $1`, id).
+		Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+	return sh, err == nil
 }
 
 func (s *Store) ShopByLogin(name, password string) (*Shop, bool) {
-	query := `SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE name = $1 AND password_demo = $2`
 	sh := &Shop{}
-	err := s.db.QueryRow(query, name, password).Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
-	if err != nil {
-		return nil, false
-	}
-	return sh, true
+	err := s.db.QueryRow(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE name = $1 AND password_demo = $2`, name, password).
+		Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+	return sh, err == nil
 }
 
 func (s *Store) ShopNameTaken(name string) bool {
@@ -360,58 +344,40 @@ func (s *Store) ShopNameTaken(name string) bool {
 }
 
 func (s *Store) AllShops() []*Shop {
-	rows, err := s.db.Query("SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops ORDER BY name ASC")
-	if err != nil {
-		return nil
-	}
+	rows, _ := s.db.Query("SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops ORDER BY name ASC")
 	defer rows.Close()
-
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved); err == nil {
-			shops = append(shops, sh)
-		}
+		rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+		shops = append(shops, sh)
 	}
 	return shops
 }
 
-func (s *Store) AddShop(name, owner, phone, password string) *Shop {
+func (s *Store) AddShop(name, owner, phone, address, password string) *Shop {
 	var seq int
-	err := s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
-	if err != nil {
-		log.Println("Error generating shop ID:", err)
-		return nil
-	}
+	s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("S-%04d", seq)
 
-	// Note: 'approved' defaults to FALSE via the database schema
-	query := `INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved)
-              VALUES ($1, $2, $3, $4, 300.00, 0.00, 15, $5, FALSE)
-              RETURNING id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved`
+	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved)
+              VALUES ($1, $2, $3, $4, $5, 300.00, 0.00, 15, $6, FALSE)
+              RETURNING id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved`
 	sh := &Shop{}
-	err = s.db.QueryRow(query, id, name, owner, phone, password).Scan(
-		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved,
+	s.db.QueryRow(query, id, name, owner, phone, address, password).Scan(
+		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved,
 	)
-	if err != nil {
-		return nil
-	}
 	return sh
 }
 
 func (s *Store) PendingShops() []*Shop {
-	rows, err := s.db.Query("SELECT id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE approved = FALSE ORDER BY id ASC")
-	if err != nil {
-		return nil
-	}
+	rows, _ := s.db.Query("SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE approved = FALSE ORDER BY id ASC")
 	defer rows.Close()
-
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved); err == nil {
-			shops = append(shops, sh)
-		}
+		rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+		shops = append(shops, sh)
 	}
 	return shops
 }
@@ -421,18 +387,12 @@ func (s *Store) ApproveShop(id string) error {
 	return err
 }
 
-func (s *Store) AddPart(make, model, category, name, source string, year, stock, reorderPoint int, price float64) error {
+func (s *Store) AddPart(makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability string) error {
 	var seq int
-	err := s.db.QueryRow("SELECT nextval('part_id_seq')").Scan(&seq)
-	if err != nil {
-		return fmt.Errorf("error generating part id: %w", err)
-	}
+	s.db.QueryRow("SELECT nextval('part_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("P-%04d", seq)
-
-	query := `INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, reorder_point)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-
-	_, err = s.db.Exec(query, id, make, model, year, category, name, source, price, stock, reorderPoint)
+	_, err := s.db.Exec(`INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability)
 	return err
 }
 
