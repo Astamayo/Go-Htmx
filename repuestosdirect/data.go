@@ -145,7 +145,7 @@ func (s *Store) initTables() error {
 	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`)
 	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
 
-	s.seedInitialData()
+	//s.seedInitialData()
 	return nil
 }
 
