@@ -1,6 +1,22 @@
 {{define "page_admin"}}{{template "header" .}}
-<h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Panel de administración</h1>
-<p class="text-sm text-stone-500 mb-4">Antigüedad de cuentas por cobrar — el número más importante del negocio.</p>
+
+<div class="flex justify-between items-center mb-4">
+  <div>
+    <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Panel de administración</h1>
+    <p class="text-sm text-stone-500">Antigüedad de cuentas por cobrar — el número más importante del negocio.</p>
+  </div>
+  <div class="flex gap-2">
+    <!-- Links to other admin areas to make navigation easier -->
+    <a href="/admin/inventory"
+      class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md transition">
+      Ver Inventario
+    </a>
+    <a href="/admin/inventory/add"
+      class="text-sm font-medium text-white bg-[#1B2A4A] hover:bg-blue-800 px-4 py-2 rounded-md transition">
+      + Agregar Repuesto
+    </a>
+  </div>
+</div>
 
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
   <table class="w-full text-sm">
@@ -22,9 +38,9 @@
         <td class="px-4 py-2 text-stone-500">{{.Order.DueDate.Format "02 Jan 2006"}}</td>
         <td class="px-4 py-2">
           {{if .Overdue}}
-            <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido ({{.DaysOverdue}} días)</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido ({{.DaysOverdue}} días)</span>
           {{else}}
-            <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Al día</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Al día</span>
           {{end}}
         </td>
       </tr>

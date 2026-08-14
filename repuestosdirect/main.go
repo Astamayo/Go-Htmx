@@ -430,6 +430,39 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleInventoryAddGet(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, "page_inventory_add", PageData{
+		Title:     "Agregar Repuesto",
+		Shop:      currentShop(r, s),
+		CartCount: cartCount(s),
+	})
+}
+
+func handleInventoryAddPost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+
+	makeStr := r.FormValue("make")
+	model := r.FormValue("model")
+	category := r.FormValue("category")
+	name := r.FormValue("name")
+	source := r.FormValue("source")
+
+	year, _ := strconv.Atoi(r.FormValue("year"))
+	stock, _ := strconv.Atoi(r.FormValue("stock"))
+	reorder, _ := strconv.Atoi(r.FormValue("reorder_point"))
+	price, _ := strconv.ParseFloat(r.FormValue("price_usd"), 64)
+
+	err := store.AddPart(makeStr, model, category, name, source, year, stock, reorder, price)
+	if err != nil {
+		log.Println("Error adding part:", err)
+		// You could render the form again with an error message here
+	}
+
+	// Redirect back to the inventory table after saving
+	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
+}
+
 func handleSignupGet(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s)})
@@ -500,6 +533,9 @@ func main() {
 	mux.HandleFunc("GET /admin/delivery", requireAdmin(handleDelivery))
 	mux.HandleFunc("POST /admin/delivery/assign", requireAdmin(handleDeliveryAssign))
 
+	// page_inventory_add
+	mux.HandleFunc("GET /admin/inventory/add", requireAdmin(handleInventoryAddGet))
+	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(handleInventoryAddPost))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

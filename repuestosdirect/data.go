@@ -135,6 +135,7 @@ func (s *Store) initTables() error {
 	);
 	CREATE SEQUENCE IF NOT EXISTS order_id_seq;
 	CREATE SEQUENCE IF NOT EXISTS shop_id_seq;
+	CREATE SEQUENCE IF NOT EXISTS part_id_seq;
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -382,6 +383,21 @@ func (s *Store) AddShop(name, owner, phone, password string) *Shop {
 		return nil
 	}
 	return sh
+}
+
+func (s *Store) AddPart(make, model, category, name, source string, year, stock, reorderPoint int, price float64) error {
+	var seq int
+	err := s.db.QueryRow("SELECT nextval('part_id_seq')").Scan(&seq)
+	if err != nil {
+		return fmt.Errorf("error generating part id: %w", err)
+	}
+	id := fmt.Sprintf("P-%04d", seq)
+
+	query := `INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, reorder_point)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+
+	_, err = s.db.Exec(query, id, make, model, year, category, name, source, price, stock, reorderPoint)
+	return err
 }
 
 func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Order, error) {

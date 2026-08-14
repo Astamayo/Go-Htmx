@@ -1,0 +1,79 @@
+{{define "page_inventory_add"}}
+{{template "header" .}}
+
+<div class="max-w-2xl mx-auto bg-white p-6 rounded-lg border border-stone-200 mt-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-xl font-bold text-[#1B2A4A]">Agregar nuevo repuesto</h1>
+        <a href="/admin/inventory" class="text-sm text-blue-600 hover:underline">Volver al inventario</a>
+    </div>
+
+    <form action="/admin/inventory/add" method="POST" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Marca del Vehículo</label>
+                <input type="text" name="make" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="Ej: Toyota">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Modelo</label>
+                <input type="text" name="model" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="Ej: Corolla">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Año</label>
+                <input type="number" name="year" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="2015">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Categoría</label>
+                <input type="text" name="category" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
+                    placeholder="Ej: Frenos, Motor...">
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-stone-700">Nombre de la pieza</label>
+            <input type="text" name="name" required
+                class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
+                placeholder="Ej: Pastillas de freno delanteras">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-stone-700">Origen / Marca de pieza</label>
+            <input type="text" name="source" required
+                class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
+                placeholder="Ej: OEM Japan, Aftermarket">
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Precio (USD)</label>
+                <input type="number" step="0.01" name="price_usd" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Stock Inicial</label>
+                <input type="number" name="stock" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Punto de reorden</label>
+                <input type="number" name="reorder_point" value="5" required
+                    class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+        </div>
+
+        <div class="pt-4">
+            <button type="submit"
+                class="w-full bg-[#1B2A4A] text-white py-2 px-4 rounded hover:bg-blue-800 transition">Guardar
+                Repuesto</button>
+        </div>
+    </form>
+</div>
+
+{{template "footer" .}}
+{{end}}
