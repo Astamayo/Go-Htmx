@@ -1,0 +1,74 @@
+{{define "page_inventory"}}
+{{template "header" .}}
+
+<div class="flex justify-between items-center mb-4">
+    <div>
+        <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Inventario de Repuestos</h1>
+        <p class="text-sm text-stone-500">Gestión de piezas, precios y niveles de stock.</p>
+    </div>
+    <div class="flex gap-2">
+        <!-- Links to navigate easily -->
+        <a href="/admin"
+            class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md transition">
+            Volver al Panel Admin
+        </a>
+        <a href="/admin/inventory/add"
+            class="text-sm font-medium text-white bg-[#1B2A4A] hover:bg-blue-800 px-4 py-2 rounded-md transition">
+            + Agregar Repuesto
+        </a>
+    </div>
+</div>
+
+<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
+            <tr>
+                <th class="text-left px-4 py-2">ID</th>
+                <th class="text-left px-4 py-2">Vehículo</th>
+                <th class="text-left px-4 py-2">Pieza</th>
+                <th class="text-left px-4 py-2">Precio (USD)</th>
+                <th class="text-center px-4 py-2">Stock</th>
+                <th class="text-center px-4 py-2">Estado</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-200">
+            {{if not .StockRows}}
+            <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-stone-500">
+                    No hay repuestos en el inventario. ¡Agrega tu primer repuesto!
+                </td>
+            </tr>
+            {{else}}
+            {{range .StockRows}}
+            <tr class="hover:bg-stone-50">
+                <td class="px-4 py-3 text-stone-500 text-xs">{{.Part.ID}}</td>
+                <td class="px-4 py-3">
+                    <span class="font-medium">{{.Part.Make}} {{.Part.Model}}</span>
+                    <span class="text-stone-500 text-xs block">Año: {{.Part.Year}}</span>
+                </td>
+                <td class="px-4 py-3">
+                    <span class="font-medium">{{.Part.Name}}</span>
+                    <span class="text-stone-500 text-xs block">{{.Part.Category}} | {{.Part.Source}}</span>
+                </td>
+                <td class="px-4 py-3 font-medium text-emerald-700">${{printf "%.2f" .Part.PriceUSD}}</td>
+                <td class="px-4 py-3 text-center font-bold">{{.Part.Stock}}</td>
+                <td class="px-4 py-3 text-center">
+                    {{if eq .Status "out"}}
+                    <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">Agotado</span>
+                    {{else if eq .Status "reorder"}}
+                    <span
+                        class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 font-medium">Reordenar</span>
+                    {{else}}
+                    <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium">Stock
+                        OK</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+{{end}}
