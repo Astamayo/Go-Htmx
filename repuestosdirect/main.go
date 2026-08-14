@@ -74,6 +74,9 @@ type PageData struct {
 	Data      any
 }
 
+type inventoryData struct{ StockRows []StockRow }
+type deliveryData struct{ Pending []*Order }
+
 func render(w http.ResponseWriter, page string, pd PageData) {
 	type ctx struct {
 		Title           string
@@ -141,6 +144,43 @@ type adminData struct{ Rows []AgingRow }
 // ---------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------
+
+func handleInventory(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, "page_inventory", PageData{Title: "Inventario", Shop: currentShop(r, s), CartCount: cartCount(s),
+		Data: inventoryData{StockRows: store.StockReport()}})
+}
+
+func handleDelivery(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, "page_delivery", PageData{Title: "Entregas", Shop: currentShop(r, s), CartCount: cartCount(s),
+		Data: deliveryData{Pending: store.PendingDeliveries()}})
+}
+
+func handleDeliveryAssign(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	store.AssignCourier(r.FormValue("order_id"), r.FormValue("courier"))
+	http.Redirect(w, r, "/admin/delivery", http.StatusSeeOther)
+}
+
+// Basic auth gate for everything under /admin -- minimal but real.
+// Set ADMIN_PASSWORD in Render's env vars.
+func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		want := os.Getenv("ADMIN_PASSWORD")
+		if want == "" {
+			http.Error(w, "ADMIN_PASSWORD no configurado", http.StatusInternalServerError)
+			return
+		}
+		_, pass, ok := r.BasicAuth()
+		if !ok || pass != want {
+			w.Header().Set("WWW-Authenticate", `Basic realm="admin"`)
+			http.Error(w, "no autorizado", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
 
 func currentShop(_ *http.Request, s *Session) *Shop {
 	if s.ShopID == "" {
@@ -409,9 +449,14 @@ func main() {
 	mux.HandleFunc("POST /login", handleLoginPost)
 	mux.HandleFunc("GET /logout", handleLogout)
 	mux.HandleFunc("GET /dashboard", handleDashboard)
-	mux.HandleFunc("GET /admin", handleAdmin)
 	mux.HandleFunc("GET /signup", handleSignupGet)
 	mux.HandleFunc("POST /signup", handleSignupPost)
+
+	// Admin routes protected by BasicAuth middleware
+	mux.HandleFunc("GET /admin", requireAdmin(handleAdmin))
+	mux.HandleFunc("GET /admin/inventory", requireAdmin(handleInventory))
+	mux.HandleFunc("GET /admin/delivery", requireAdmin(handleDelivery))
+	mux.HandleFunc("POST /admin/delivery/assign", requireAdmin(handleDeliveryAssign))
 
 	port := os.Getenv("PORT")
 	if port == "" {

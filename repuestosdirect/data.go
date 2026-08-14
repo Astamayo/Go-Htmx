@@ -10,15 +10,22 @@ import (
 )
 
 type Part struct {
-	ID       string
-	Make     string
-	Model    string
-	Year     int
-	Category string
-	Name     string
-	Source   string
-	PriceUSD float64
-	Stock    int
+	ID           string
+	Make         string
+	Model        string
+	Year         int
+	Category     string
+	Name         string
+	Source       string
+	PriceUSD     float64
+	Stock        int
+	Courier      string
+	ReorderPoint int
+}
+
+type StockRow struct {
+	Part   Part
+	Status string
 }
 
 type Shop struct {
@@ -58,6 +65,7 @@ type Order struct {
 	Status   OrderStatus
 	PlacedAt time.Time
 	DueDate  time.Time
+	Courier  string
 }
 
 type Store struct {
@@ -129,6 +137,10 @@ func (s *Store) initTables() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
+
+	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS reorder_point INT NOT NULL DEFAULT 5`)
+	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
 
 	s.seedInitialData()
 	return nil
@@ -213,6 +225,60 @@ func (s *Store) Years(make, model string) []int {
 		}
 	}
 	return years
+}
+
+func (s *Store) StockReport() []StockRow {
+	rows, err := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point
+		FROM parts WHERE stock > 0 OR source = 'OEM USA' ORDER BY name`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []StockRow
+	for rows.Next() {
+		var p Part
+		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint)
+		status := "ok"
+		if p.Stock == 0 {
+			status = "out"
+		} else if p.Stock <= p.ReorderPoint {
+			status = "reorder"
+		}
+		out = append(out, StockRow{Part: p, Status: status})
+	}
+	return out
+}
+
+func (s *Store) PendingDeliveries() []*Order {
+	rows, err := s.db.Query(`SELECT id, shop_id, total, on_credit, status, courier, placed_at, due_date
+		FROM orders WHERE courier = '' ORDER BY placed_at ASC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []*Order
+	for rows.Next() {
+		o := &Order{}
+		var nullShop sql.NullString
+		rows.Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.Courier, &o.PlacedAt, &o.DueDate)
+		if nullShop.Valid {
+			o.ShopID = nullShop.String
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+func (s *Store) AssignCourier(orderID, courier string) error {
+	res, err := s.db.Exec(`UPDATE orders SET courier = $1, delivered_at = now() WHERE id = $2`, courier, orderID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("pedido no encontrado")
+	}
+	return nil
 }
 
 func (s *Store) PartsFor(make, model string, year int) []Part {
