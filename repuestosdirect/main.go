@@ -91,6 +91,8 @@ func render(w http.ResponseWriter, page string, pd PageData) {
 		Orders          []*Order
 		Order           *Order
 		Rows            []AgingRow
+		StockRows       []StockRow
+		Pending         []*Order
 	}
 	c := ctx{Title: pd.Title, Shop: pd.Shop, CartCount: pd.CartCount, Error: pd.Error}
 	switch d := pd.Data.(type) {
@@ -109,6 +111,10 @@ func render(w http.ResponseWriter, page string, pd PageData) {
 		c.Order = d.Order
 	case adminData:
 		c.Rows = d.Rows
+	case inventoryData:
+		c.StockRows = d.StockRows
+	case deliveryData:
+		c.Pending = d.Pending
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
