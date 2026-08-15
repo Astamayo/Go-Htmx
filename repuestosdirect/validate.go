@@ -62,6 +62,30 @@ func availabilityShort(availability string) string {
 	return "por pedido, 3 a 4 semanas"
 }
 
+func validateShopCredit(limit float64, terms, splits, reminderDays int) error {
+	if limit <= 0 {
+		return ValidationError{Message: "El límite de crédito debe ser mayor a cero."}
+	}
+	if terms < 1 || terms > 365 {
+		return ValidationError{Message: "Los términos deben ser entre 1 y 365 días."}
+	}
+	if splits < 1 || splits > 12 {
+		return ValidationError{Message: "Los pagos deben ser entre 1 y 12 cuotas."}
+	}
+	if reminderDays < 0 || reminderDays > 30 {
+		return ValidationError{Message: "El recordatorio debe ser entre 0 y 30 días antes."}
+	}
+	return nil
+}
+
+func creditTermsLabel(terms, splits int) string {
+	if splits <= 1 {
+		return fmt.Sprintf("%d días", terms)
+	}
+	daysPer := terms / splits
+	return fmt.Sprintf("%d días en %d pagos (cada %d días)", terms, splits, daysPer)
+}
+
 func mapsQuery(address, name string) string {
 	q := strings.TrimSpace(address)
 	if q == "" {

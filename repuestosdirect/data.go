@@ -37,7 +37,9 @@ type Shop struct {
 	Address      string
 	CreditLimit  float64
 	CreditUsed   float64
-	CreditTerms  int
+	CreditTerms    int
+	PaymentSplits  int
+	ReminderDays   int
 	PasswordDemo string
 	Approved     bool
 	Active       bool
@@ -70,7 +72,8 @@ type Order struct {
 	PlacedAt time.Time
 	DueDate  time.Time
 	Courier  string
-	PaidAt   *time.Time
+	PaidAt       *time.Time
+	Installments []Installment
 }
 
 type ReportSummary struct {
@@ -176,6 +179,19 @@ func (s *Store) initTables() error {
 		`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_part_id_fkey`,
 		`ALTER TABLE order_items ALTER COLUMN part_id DROP NOT NULL`,
 		`ALTER TABLE order_items ADD CONSTRAINT order_items_part_id_fkey FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE SET NULL`,
+		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS payment_splits INT NOT NULL DEFAULT 2`,
+		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS reminder_days INT NOT NULL DEFAULT 3`,
+		`ALTER TABLE shops ALTER COLUMN credit_terms SET DEFAULT 30`,
+		`CREATE TABLE IF NOT EXISTS order_installments (
+			id BIGSERIAL PRIMARY KEY,
+			order_id VARCHAR(50) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+			installment_num INT NOT NULL,
+			amount NUMERIC(10,2) NOT NULL,
+			due_date TIMESTAMPTZ NOT NULL,
+			paid_at TIMESTAMPTZ,
+			reminder_sent_at TIMESTAMPTZ,
+			UNIQUE(order_id, installment_num)
+		)`,
 	}
 	for _, q := range migrations {
 		if _, err := s.db.Exec(q); err != nil {
@@ -274,48 +290,6 @@ func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) (*Order, e
 	return s.Order(orderID)
 }
 
-func (s *Store) MarkOrderPaid(orderID string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	var shopID sql.NullString
-	var total float64
-	var onCredit bool
-	var paidAt sql.NullTime
-	err = tx.QueryRow(
-		`SELECT shop_id, total, on_credit, paid_at FROM orders WHERE id = $1 FOR UPDATE`,
-		orderID,
-	).Scan(&shopID, &total, &onCredit, &paidAt)
-	if err != nil {
-		return fmt.Errorf("pedido no encontrado")
-	}
-	if !onCredit {
-		return fmt.Errorf("solo pedidos a crédito pueden marcarse como pagados")
-	}
-	if paidAt.Valid {
-		return fmt.Errorf("pedido ya fue pagado")
-	}
-	if !shopID.Valid {
-		return fmt.Errorf("pedido sin taller asociado")
-	}
-
-	_, err = tx.Exec(`UPDATE orders SET paid_at = now() WHERE id = $1`, orderID)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(
-		`UPDATE shops SET credit_used = GREATEST(credit_used - $1, 0) WHERE id = $2`,
-		total, shopID.String,
-	)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 func (s *Store) DeletePart(partID string) error {
 	_, err := s.db.Exec("DELETE FROM parts WHERE id = $1", partID)
 	return err
@@ -340,6 +314,7 @@ func (s *Store) Order(orderID string) (*Order, error) {
 		o.PaidAt = &t
 	}
 	o.Items = s.getOrderItems(o.ID)
+	o.Installments = s.InstallmentsForOrder(o.ID)
 	return o, nil
 }
 
@@ -505,19 +480,23 @@ func (s *Store) Part(id string) (Part, bool) {
 
 func scanShop(row *sql.Row) (*Shop, error) {
 	sh := &Shop{}
-	err := row.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved, &sh.Active)
+	err := row.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address,
+		&sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PaymentSplits, &sh.ReminderDays,
+		&sh.PasswordDemo, &sh.Approved, &sh.Active)
 	return sh, err
 }
 
+const shopColumns = `id, name, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active`
+
 func (s *Store) Shop(id string) (*Shop, bool) {
 	sh, err := scanShop(s.db.QueryRow(
-		`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE id = $1 AND active = TRUE`, id))
+		`SELECT `+shopColumns+` FROM shops WHERE id = $1 AND active = TRUE`, id))
 	return sh, err == nil
 }
 
 func (s *Store) ShopByName(name string) (*Shop, bool) {
 	sh, err := scanShop(s.db.QueryRow(
-		`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE name = $1 AND active = TRUE`, name))
+		`SELECT `+shopColumns+` FROM shops WHERE name = $1 AND active = TRUE`, name))
 	return sh, err == nil
 }
 
@@ -528,15 +507,15 @@ func (s *Store) ShopNameTaken(name string) bool {
 }
 
 func (s *Store) AllShops() []*Shop {
-	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
+	return s.queryShops(`SELECT ` + shopColumns + ` FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
 }
 
 func (s *Store) ActiveClients() []*Shop {
-	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
+	return s.queryShops(`SELECT ` + shopColumns + ` FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
 }
 
 func (s *Store) PendingShops() []*Shop {
-	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = FALSE ORDER BY id ASC`)
+	return s.queryShops(`SELECT ` + shopColumns + ` FROM shops WHERE active = TRUE AND approved = FALSE ORDER BY id ASC`)
 }
 
 func (s *Store) queryShops(q string) []*Shop {
@@ -548,7 +527,9 @@ func (s *Store) queryShops(q string) []*Shop {
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved, &sh.Active); err == nil {
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address,
+			&sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PaymentSplits, &sh.ReminderDays,
+			&sh.PasswordDemo, &sh.Approved, &sh.Active); err == nil {
 			shops = append(shops, sh)
 		}
 	}
@@ -564,10 +545,11 @@ func (s *Store) AddShop(name, owner, phone, address, password string) (*Shop, er
 	s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("S-%04d", seq)
 
-	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active)
-              VALUES ($1, $2, $3, $4, $5, 300.00, 0.00, 15, $6, FALSE, TRUE)
-              RETURNING id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active`
-	sh, err := scanShop(s.db.QueryRow(query, id, name, owner, phone, address, hashed))
+	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active)
+              VALUES ($1, $2, $3, $4, $5, $6, 0.00, $7, $8, $9, $10, FALSE, TRUE)
+              RETURNING ` + shopColumns
+	sh, err := scanShop(s.db.QueryRow(query, id, name, owner, phone, address,
+		DefaultCreditLimit, DefaultCreditTerms, DefaultPaymentSplits, DefaultReminderDays, hashed))
 	return sh, err
 }
 
@@ -582,7 +564,7 @@ func (s *Store) RemoveShop(id string) error {
 		// allow removing inactive
 		var err error
 		sh, err = scanShop(s.db.QueryRow(
-			`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE id = $1`, id))
+			`SELECT `+shopColumns+` FROM shops WHERE id = $1`, id))
 		if err != nil {
 			return fmt.Errorf("taller no encontrado")
 		}
@@ -592,8 +574,14 @@ func (s *Store) RemoveShop(id string) error {
 	}
 	var unpaid int
 	s.db.QueryRow(`
-		SELECT COUNT(*) FROM orders
-		WHERE shop_id = $1 AND on_credit = TRUE AND paid_at IS NULL`, id).Scan(&unpaid)
+		SELECT COUNT(*) FROM order_installments oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE o.shop_id = $1 AND oi.paid_at IS NULL AND o.on_credit = TRUE`, id).Scan(&unpaid)
+	if unpaid == 0 {
+		s.db.QueryRow(`
+			SELECT COUNT(*) FROM orders
+			WHERE shop_id = $1 AND on_credit = TRUE AND paid_at IS NULL`, id).Scan(&unpaid)
+	}
 	if unpaid > 0 {
 		return fmt.Errorf("no se puede eliminar: hay %d pedido(s) a crédito sin pagar", unpaid)
 	}
@@ -648,14 +636,15 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 		}
 	}
 
-	terms := 15
+	terms := DefaultCreditTerms
+	splits := DefaultPaymentSplits
 	if shopID != "" && onCredit {
 		var creditLimit, creditUsed float64
-		var creditTerms int
+		var creditTerms, paymentSplits int
 		err = tx.QueryRow(
-			`SELECT credit_limit, credit_used, credit_terms FROM shops WHERE id = $1 AND active = TRUE FOR UPDATE`,
+			`SELECT credit_limit, credit_used, credit_terms, payment_splits FROM shops WHERE id = $1 AND active = TRUE FOR UPDATE`,
 			shopID,
-		).Scan(&creditLimit, &creditUsed, &creditTerms)
+		).Scan(&creditLimit, &creditUsed, &creditTerms, &paymentSplits)
 		if err != nil {
 			return nil, fmt.Errorf("taller no encontrado")
 		}
@@ -663,6 +652,10 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 			return nil, fmt.Errorf("crédito insuficiente ($%.2f disponible)", creditLimit-creditUsed)
 		}
 		terms = creditTerms
+		splits = paymentSplits
+		if splits < 1 {
+			splits = 1
+		}
 		_, err = tx.Exec("UPDATE shops SET credit_used = credit_used + $1 WHERE id = $2", total, shopID)
 		if err != nil {
 			return nil, err
@@ -701,6 +694,18 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 			"INSERT INTO order_items (order_id, part_id, part_name, qty, unit_usd) VALUES ($1, $2, $3, $4, $5)",
 			orderID, item.PartID, item.PartName, item.Qty, item.UnitUSD,
 		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if onCredit {
+		finalDue, err := s.createInstallmentsTx(tx, orderID, total, terms, splits, placedAt)
+		if err != nil {
+			return nil, err
+		}
+		dueDate = finalDue
+		_, err = tx.Exec(`UPDATE orders SET due_date = $1 WHERE id = $2`, dueDate, orderID)
 		if err != nil {
 			return nil, err
 		}
@@ -757,6 +762,24 @@ func (s *Store) AllOrdersSortedByDue() []*Order {
 
 func (s *Store) CreditOrdersForAging() []*Order {
 	rows, err := s.db.Query(`
+		SELECT DISTINCT ON (o.id) o.id, o.shop_id, o.total, o.on_credit, o.status, o.placed_at, o.due_date
+		FROM orders o
+		JOIN order_installments oi ON oi.order_id = o.id
+		WHERE o.on_credit = TRUE AND oi.paid_at IS NULL AND o.shop_id IS NOT NULL
+		ORDER BY o.id, oi.due_date ASC`)
+	if err != nil {
+		return s.creditOrdersForAgingLegacy()
+	}
+	defer rows.Close()
+	orders := scanOrders(rows, s)
+	if len(orders) == 0 {
+		return s.creditOrdersForAgingLegacy()
+	}
+	return orders
+}
+
+func (s *Store) creditOrdersForAgingLegacy() []*Order {
+	rows, err := s.db.Query(`
 		SELECT id, shop_id, total, on_credit, status, placed_at, due_date
 		FROM orders
 		WHERE on_credit = TRUE AND paid_at IS NULL AND shop_id IS NOT NULL
@@ -771,12 +794,8 @@ func (s *Store) CreditOrdersForAging() []*Order {
 func (s *Store) ReportSummary() ReportSummary {
 	var r ReportSummary
 	s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(total),0) FROM orders`).Scan(&r.TotalOrders, &r.TotalSales)
-	s.db.QueryRow(`
-		SELECT COALESCE(SUM(total),0)
-		FROM orders WHERE on_credit = TRUE AND paid_at IS NULL`).Scan(&r.CreditOutstanding)
-	s.db.QueryRow(`
-		SELECT COUNT(*)
-		FROM orders WHERE on_credit = TRUE AND paid_at IS NULL AND due_date < now()`).Scan(&r.OverdueCount)
+	r.CreditOutstanding = s.creditOutstanding()
+	r.OverdueCount = s.overdueInstallmentCount()
 	s.db.QueryRow(`SELECT COUNT(*) FROM shops WHERE active = TRUE AND approved = TRUE`).Scan(&r.ActiveShops)
 	r.LowStockCount = len(s.LowStockParts())
 	return r

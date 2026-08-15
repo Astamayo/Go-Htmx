@@ -26,15 +26,39 @@
         </div>
         {{if .Order.OnCredit}}
         <div>
-            <p class="text-xs text-stone-400">Vence</p>
+            <p class="text-xs text-stone-400">Vence (final)</p>
             <p class="font-semibold">{{.Order.DueDate.Format "02 Jan 2006"}}</p>
         </div>
         <div>
             <p class="text-xs text-stone-400">Estado pago</p>
-            <p class="font-semibold">{{if .Order.PaidAt}}Pagado{{else}}Pendiente{{end}}</p>
+            <p class="font-semibold">{{if .Order.PaidAt}}Pagado completo{{else}}Pendiente{{end}}</p>
         </div>
         {{end}}
     </div>
+
+    {{if .Installments}}
+    <h2 class="font-semibold text-stone-700 mb-2 text-sm">Plan de pagos</h2>
+    <div class="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden mb-6">
+        {{range .Installments}}
+        <div class="flex justify-between items-center px-4 py-3 text-sm">
+            <div>
+                <p class="font-medium">Cuota {{.Num}} — ${{printf "%.2f" .Amount}}</p>
+                <p class="text-xs text-stone-500">Vence: {{.DueDate.Format "02 Jan 2006"}}</p>
+            </div>
+            {{if .PaidAt}}
+            <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Pagada</span>
+            {{else}}
+            <form action="/admin/installments/pay" method="POST" class="inline">
+                {{template "csrf" $}}
+                <input type="hidden" name="installment_id" value="{{.ID}}">
+                <input type="hidden" name="redirect" value="/admin/orders/{{$.Order.ID}}">
+                <button type="submit" class="text-xs bg-emerald-600 text-white px-2 py-1 rounded">Marcar pagada</button>
+            </form>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{end}}
 
     <h2 class="font-semibold text-stone-700 mb-2 text-sm">Artículos</h2>
     <div class="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden mb-6">
@@ -49,28 +73,18 @@
         {{end}}
     </div>
 
-    <div class="flex flex-wrap gap-3">
-        <form action="/admin/orders/status" method="POST" class="flex gap-2 items-center">
-            {{template "csrf" .}}
-            <input type="hidden" name="order_id" value="{{.Order.ID}}">
-            <select name="status" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white">
-                <option value="Pedido">Pedido</option>
-                <option value="Enviado">Enviado</option>
-                <option value="En aduana">En aduana</option>
-                <option value="Listo para recoger">Listo para recoger</option>
-                <option value="Llegado">Llegado / Entregado</option>
-            </select>
-            <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded text-xs">Actualizar estado</button>
-        </form>
-        {{if and .Order.OnCredit (not .Order.PaidAt)}}
-        <form action="/admin/orders/pay" method="POST">
-            {{template "csrf" .}}
-            <input type="hidden" name="order_id" value="{{.Order.ID}}">
-            <button type="submit" class="bg-emerald-600 text-white px-3 py-1 rounded text-xs hover:bg-emerald-700"
-                onclick="return confirm('¿Marcar este pedido como pagado?')">Marcar pagado</button>
-        </form>
-        {{end}}
-    </div>
+    <form action="/admin/orders/status" method="POST" class="flex gap-2 items-center">
+        {{template "csrf" .}}
+        <input type="hidden" name="order_id" value="{{.Order.ID}}">
+        <select name="status" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white">
+            <option value="Pedido">Pedido</option>
+            <option value="Enviado">Enviado</option>
+            <option value="En aduana">En aduana</option>
+            <option value="Listo para recoger">Listo para recoger</option>
+            <option value="Llegado">Llegado / Entregado</option>
+        </select>
+        <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded text-xs">Actualizar estado</button>
+    </form>
 </div>
 
 {{template "footer" .}}

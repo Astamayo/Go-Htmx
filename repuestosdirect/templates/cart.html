@@ -36,7 +36,8 @@
     {{if .Shop}}
       <div class="bg-stone-50 border border-stone-200 rounded-lg p-4 mb-5 text-sm">
         <p class="font-semibold text-stone-700 mb-1">Crédito de {{.Shop.Name}}</p>
-        <p class="text-stone-500">Límite: ${{printf "%.2f" .Shop.CreditLimit}} · Usado: ${{printf "%.2f" .Shop.CreditUsed}} · Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span> · Términos: {{.Shop.CreditTerms}} días</p>
+        <p class="text-stone-500">Límite: ${{printf "%.2f" .Shop.CreditLimit}} · Usado: ${{printf "%.2f" .Shop.CreditUsed}} · Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span></p>
+        <p class="text-stone-500 text-xs mt-1">Plan: {{creditTermsLabel .Shop.CreditTerms .Shop.PaymentSplits}}</p>
       </div>
 
       <form method="POST" action="/order/place" class="flex flex-wrap gap-3 items-center">
@@ -45,7 +46,7 @@
           <input type="radio" name="payment" value="cash" checked> Pagar de contado
         </label>
         <label class="text-sm flex items-center gap-2 {{if lt .CreditAvailable .Total}}opacity-40{{end}}">
-          <input type="radio" name="payment" value="credit" {{if lt .CreditAvailable .Total}}disabled{{end}}> Usar crédito ({{.Shop.CreditTerms}} días)
+          <input type="radio" name="payment" value="credit" {{if lt .CreditAvailable .Total}}disabled{{end}}> Usar crédito ({{creditTermsLabel .Shop.CreditTerms .Shop.PaymentSplits}})
         </label>
         <button class="ml-auto bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
           Confirmar pedido

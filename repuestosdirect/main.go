@@ -1,12 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var store *Store
@@ -24,6 +24,7 @@ func loadTemplates() {
 		"sub": func(a, b float64) float64 {
 			return a - b
 		},
+		"creditTermsLabel": creditTermsLabel,
 	}
 	tmpl = template.Must(template.New("").Funcs(funcMap).ParseGlob("templates/*.html"))
 }
@@ -42,9 +43,10 @@ type deliveryData struct{ Pending []*Order }
 type pendingData struct{ Pending, Clients []*Shop }
 type orderManageData struct{ Orders []*Order }
 type orderDetailData struct {
-	Order     *Order
-	ShopName  string
-	ShopPhone string
+	Order        *Order
+	ShopName     string
+	ShopPhone    string
+	Installments []Installment
 }
 type searchData struct {
 	Query string
@@ -79,16 +81,10 @@ type dashboardData struct {
 	CreditAvailable float64
 }
 type confirmData struct{ Order *Order }
-type AgingRow struct {
-	Order       *Order
-	ShopName    string
-	Overdue     bool
-	DaysOverdue int
-}
 type adminData struct {
-	Rows      []AgingRow
-	Summary   ReportSummary
-	LowStock  []StockRow
+	Rows         []AgingInstallmentRow
+	Summary      ReportSummary
+	LowStock     []StockRow
 }
 
 func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
@@ -113,7 +109,8 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		Order           *Order
 		ShopName        string
 		ShopPhone       string
-		Rows            []AgingRow
+		Installments    []Installment
+		Rows            []AgingInstallmentRow
 		StockRows       []StockRow
 		LowStock        []StockRow
 		Pending         []*Order
@@ -159,6 +156,7 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		c.Order = d.Order
 		c.ShopName = d.ShopName
 		c.ShopPhone = d.ShopPhone
+		c.Installments = d.Installments
 	case driverData:
 		c.DriverRoutes = d.Routes
 	case searchData:
@@ -353,7 +351,14 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 	s.clearCart()
 
 	if sh != nil {
-		msg := "Hola " + sh.Owner + ", tu pedido " + order.ID + " por $" + strconv.FormatFloat(order.Total, 'f', 2, 64) + " fue confirmado. Estado: " + string(order.Status) + "."
+		msg := "Hola " + sh.Owner + ", tu pedido " + order.ID + " por $" + strconv.FormatFloat(order.Total, 'f', 2, 64) + " fue confirmado."
+		if order.OnCredit {
+			msg += " Plan de pago: " + creditTermsLabel(sh.CreditTerms, sh.PaymentSplits) + "."
+			for _, inst := range store.InstallmentsForOrder(order.ID) {
+				msg += fmt.Sprintf(" Cuota %d: $%.2f vence %s.", inst.Num, inst.Amount, inst.DueDate.Format("02/01/2006"))
+			}
+		}
+		msg += " Estado: " + string(order.Status) + "."
 		SendWhatsApp(sh.Phone, msg)
 	}
 
@@ -445,30 +450,15 @@ func handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	render(w, r, "page_order_detail", PageData{
 		Title: "Pedido " + orderID, Shop: sh, CartCount: cartCount(s),
-		Data: orderDetailData{Order: order, ShopName: sh.Name, ShopPhone: sh.Phone},
+		Data: orderDetailData{Order: order, ShopName: sh.Name, ShopPhone: sh.Phone, Installments: order.Installments},
 	})
 }
 
 func handleAdmin(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	var rows []AgingRow
-	now := time.Now()
-	for _, o := range store.CreditOrdersForAging() {
-		shx, _ := store.Shop(o.ShopID)
-		name := o.ShopID
-		if shx != nil {
-			name = shx.Name
-		}
-		overdue := now.After(o.DueDate)
-		days := 0
-		if overdue {
-			days = int(now.Sub(o.DueDate).Hours() / 24)
-		}
-		rows = append(rows, AgingRow{Order: o, ShopName: name, Overdue: overdue, DaysOverdue: days})
-	}
 	render(w, r, "page_admin", PageData{
 		Title: "Administración", Shop: currentShop(s), CartCount: cartCount(s),
-		Data: adminData{Rows: rows, Summary: store.ReportSummary(), LowStock: store.LowStockParts()},
+		Data: adminData{Rows: store.AgingInstallments(), Summary: store.ReportSummary(), LowStock: store.LowStockParts()},
 	})
 }
 
@@ -582,6 +572,58 @@ func handleAdminShopApprove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
 }
 
+func handleAdminShopCredit(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	shopID := r.FormValue("shop_id")
+	limit, _ := strconv.ParseFloat(r.FormValue("credit_limit"), 64)
+	terms, _ := strconv.Atoi(r.FormValue("credit_terms"))
+	splits, _ := strconv.Atoi(r.FormValue("payment_splits"))
+	reminder, _ := strconv.Atoi(r.FormValue("reminder_days"))
+
+	if err := validateShopCredit(limit, terms, splits, reminder); err != nil {
+		render(w, r, "page_admin_shops", PageData{
+			Title: "Talleres", Shop: currentShop(s), CartCount: cartCount(s), Error: err.Error(),
+			Data: pendingData{Pending: store.PendingShops(), Clients: store.ActiveClients()},
+		})
+		return
+	}
+	if err := store.UpdateShopCredit(shopID, limit, terms, splits, reminder); err != nil {
+		render(w, r, "page_admin_shops", PageData{
+			Title: "Talleres", Shop: currentShop(s), CartCount: cartCount(s), Error: err.Error(),
+			Data: pendingData{Pending: store.PendingShops(), Clients: store.ActiveClients()},
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
+}
+
+func handleAdminInstallmentPay(w http.ResponseWriter, r *http.Request) {
+	installmentID, _ := strconv.ParseInt(r.FormValue("installment_id"), 10, 64)
+	if err := store.MarkInstallmentPaid(installmentID); err != nil {
+		logError("installment pay failed", err.Error())
+	}
+	redirect := r.FormValue("redirect")
+	if redirect == "" {
+		redirect = "/admin"
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func handleCronReminders(w http.ResponseWriter, r *http.Request) {
+	secret := os.Getenv("CRON_SECRET")
+	if secret == "" || r.URL.Query().Get("secret") != secret {
+		http.Error(w, "no autorizado", http.StatusUnauthorized)
+		return
+	}
+	sent, err := store.SendPaymentReminders()
+	if err != nil {
+		logError("reminders failed", err.Error())
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, "sent %d reminders", sent)
+}
+
 func handleAdminShopRemove(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	shopID := r.FormValue("shop_id")
@@ -638,7 +680,7 @@ func handleAdminOrderDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	render(w, r, "page_admin_order_detail", PageData{
 		Title: "Pedido " + orderID, Shop: currentShop(s), CartCount: cartCount(s),
-		Data: orderDetailData{Order: order, ShopName: shopName, ShopPhone: shopPhone},
+		Data: orderDetailData{Order: order, ShopName: shopName, ShopPhone: shopPhone, Installments: order.Installments},
 	})
 }
 
@@ -677,7 +719,11 @@ func handleAdminOrderPay(w http.ResponseWriter, r *http.Request) {
 	if err := store.MarkOrderPaid(orderID); err != nil {
 		logError("mark paid failed", err.Error())
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	redirect := r.FormValue("redirect")
+	if redirect == "" {
+		redirect = "/admin"
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func handleAdminInventoryDelete(w http.ResponseWriter, r *http.Request) {
@@ -752,7 +798,10 @@ func main() {
 	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(requirePOST(handleInventoryAddPost)))
 	mux.HandleFunc("GET /admin/shops", requireAdmin(handleAdminShops))
 	mux.HandleFunc("POST /admin/shops/approve", requireAdmin(requirePOST(handleAdminShopApprove)))
+	mux.HandleFunc("POST /admin/shops/credit", requireAdmin(requirePOST(handleAdminShopCredit)))
 	mux.HandleFunc("POST /admin/shops/remove", requireAdmin(requirePOST(handleAdminShopRemove)))
+	mux.HandleFunc("POST /admin/installments/pay", requireAdmin(requirePOST(handleAdminInstallmentPay)))
+	mux.HandleFunc("GET /cron/reminders", handleCronReminders)
 	mux.HandleFunc("GET /admin/orders", requireAdmin(handleAdminOrders))
 	mux.HandleFunc("GET /admin/orders/{id}", requireAdmin(handleAdminOrderDetail))
 	mux.HandleFunc("POST /admin/orders/status", requireAdmin(requirePOST(handleAdminOrderStatus)))

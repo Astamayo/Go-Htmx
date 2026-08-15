@@ -15,7 +15,7 @@
     <p class="text-lg font-bold text-amber-600">${{printf "%.2f" .Summary.CreditOutstanding}}</p>
   </div>
   <div class="bg-white border border-stone-200 p-4 rounded-lg">
-    <p class="text-xs text-stone-400">Vencidos</p>
+    <p class="text-xs text-stone-400">Cuotas vencidas</p>
     <p class="text-lg font-bold text-red-600">{{.Summary.OverdueCount}}</p>
   </div>
   <div class="bg-white border border-stone-200 p-4 rounded-lg">
@@ -31,44 +31,36 @@
 <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
   <a href="/admin/orders" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">📦 Pedidos</h3>
-    <p class="text-xs text-stone-500 mt-1">Actualizar estados</p>
   </a>
   <a href="/admin/delivery" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">🚛 Entregas</h3>
-    <p class="text-xs text-stone-500 mt-1">Asignar mensajeros</p>
   </a>
-  <a href="/driver" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
-    <h3 class="font-bold text-[#1B2A4A]">🚚 Repartidor</h3>
-    <p class="text-xs text-stone-500 mt-1">Vista móvil de rutas</p>
+  <a href="/admin/shops" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">🏪 Crédito talleres</h3>
   </a>
   <a href="/admin/inventory" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">⚙️ Inventario</h3>
-    <p class="text-xs text-stone-500 mt-1">Gestión de piezas</p>
-  </a>
-  <a href="/admin/shops" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
-    <h3 class="font-bold text-[#1B2A4A]">🏪 Talleres</h3>
-    <p class="text-xs text-stone-500 mt-1">Aprobar / eliminar</p>
   </a>
   <a href="/admin/reports" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">📊 Reportes</h3>
-    <p class="text-xs text-stone-500 mt-1">Resumen del negocio</p>
   </a>
 </div>
 
 {{if .LowStock}}
 <div class="mb-6 text-sm bg-yellow-50 text-yellow-800 border border-yellow-200 rounded px-4 py-3">
-  ⚠️ {{len .LowStock}} pieza(s) con stock bajo o agotado. <a href="/admin/inventory" class="underline font-semibold">Ver inventario</a>
+  ⚠️ {{len .LowStock}} pieza(s) con stock bajo. <a href="/admin/inventory" class="underline font-semibold">Ver inventario</a>
 </div>
 {{end}}
 
-<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Cuentas por cobrar (crédito)</h2>
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Cuotas por cobrar</h2>
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
   <table class="w-full text-sm">
     <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
       <tr>
         <th class="text-left px-4 py-2">Pedido</th>
         <th class="text-left px-4 py-2">Taller</th>
-        <th class="text-left px-4 py-2">Total</th>
+        <th class="text-left px-4 py-2">Cuota</th>
+        <th class="text-left px-4 py-2">Monto</th>
         <th class="text-left px-4 py-2">Vence</th>
         <th class="text-left px-4 py-2">Estado</th>
         <th class="text-right px-4 py-2">Acción</th>
@@ -76,14 +68,15 @@
     </thead>
     <tbody class="divide-y divide-stone-200">
       {{if not .Rows}}
-      <tr><td colspan="6" class="px-4 py-6 text-center text-stone-500">No hay cuentas por cobrar pendientes.</td></tr>
+      <tr><td colspan="7" class="px-4 py-6 text-center text-stone-500">No hay cuotas pendientes.</td></tr>
       {{else}}
       {{range .Rows}}
       <tr>
         <td class="px-4 py-2 font-medium"><a href="/admin/orders/{{.Order.ID}}" class="text-blue-600 hover:underline">{{.Order.ID}}</a></td>
         <td class="px-4 py-2">{{.ShopName}}</td>
-        <td class="px-4 py-2">${{printf "%.2f" .Order.Total}}</td>
-        <td class="px-4 py-2 text-stone-500">{{.Order.DueDate.Format "02 Jan 2006"}}</td>
+        <td class="px-4 py-2">#{{.Installment.Num}}</td>
+        <td class="px-4 py-2">${{printf "%.2f" .Installment.Amount}}</td>
+        <td class="px-4 py-2 text-stone-500">{{.Installment.DueDate.Format "02 Jan 2006"}}</td>
         <td class="px-4 py-2">
           {{if .Overdue}}
           <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido ({{.DaysOverdue}}d)</span>
@@ -92,11 +85,11 @@
           {{end}}
         </td>
         <td class="px-4 py-2 text-right">
-          <form action="/admin/orders/pay" method="POST" class="inline">
+          <form action="/admin/installments/pay" method="POST" class="inline">
             {{template "csrf" $}}
-            <input type="hidden" name="order_id" value="{{.Order.ID}}">
-            <button type="submit" class="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700"
-              onclick="return confirm('¿Marcar como pagado?')">Pagado</button>
+            <input type="hidden" name="installment_id" value="{{.Installment.ID}}">
+            <input type="hidden" name="redirect" value="/admin">
+            <button type="submit" class="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700">Pagada</button>
           </form>
         </td>
       </tr>

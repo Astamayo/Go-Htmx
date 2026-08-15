@@ -17,6 +17,7 @@ Plataforma de pedidos de repuestos para talleres mecánicos, construida con **Go
 | `WHATSAPP_TOKEN` | No | Token Meta WhatsApp Cloud API |
 | `WHATSAPP_PHONE_ID` | No | Phone ID de WhatsApp Business |
 | `DRIVER_PHONE` | No | WhatsApp del repartidor para alertas |
+| `CRON_SECRET` | No | Secreto para `GET /cron/reminders?secret=...` (recordatorios de pago) |
 | `PORT` | No | Puerto HTTP (default 8080) |
 
 ## Desarrollo local
@@ -51,6 +52,27 @@ El archivo `render.yaml` en la raíz configura el servicio web y la base de dato
 
 Health check: `GET /healthz`
 
+### Recordatorios de pago (cron)
+
+Configura un cron job (Render Cron o similar) que llame diariamente:
+
+```
+GET https://tu-app.onrender.com/cron/reminders?secret=TU_CRON_SECRET
+```
+
+Set `CRON_SECRET` en las variables de entorno de Render.
+
+### Gestión de crédito por taller
+
+En **Admin → Talleres** (`/admin/shops`) puedes por cada cliente:
+
+- **Límite de crédito** — aumentar o reducir (no puede bajar del saldo usado)
+- **Días total** — plazo completo (default 30)
+- **# Pagos** — cuotas (default 2 → pago día 15 y día 30)
+- **Recordar** — días antes del vencimiento para enviar WhatsApp (default 3)
+
+Los pedidos a crédito generan cuotas automáticamente. Marca cada cuota como pagada desde el panel admin o la vista del pedido.
+
 ## Funcionalidades
 
 - **Catálogo en cascada** Marca → Modelo → Año → Piezas (HTMX)
@@ -58,7 +80,9 @@ Health check: `GET /healthz`
 - **Carrito** con sesiones persistentes en PostgreSQL
 - **Crédito comercial** con validación en servidor y bloqueo por límite
 - **Checkout invitado** (contado, sin cuenta)
-- **Cuentas de taller** con registro, aprobación admin y eliminación de clientes inactivos
+- **Cuentas de taller** con registro, aprobación admin, **ajuste de crédito/términos**, y eliminación de clientes inactivos
+- **Crédito en cuotas** — default 30 días en 2 pagos (50% día 15, 50% día 30), configurable por taller
+- **Recordatorios WhatsApp** — cron diario avisa cuotas próximas a vencer o vencidas
 - **Inventario** con stock, reorden y decremento automático al comprar
 - **Panel admin** con cuentas por cobrar, marcar pagado, reportes
 - **Entregas** asignación de mensajeros y vista repartidor

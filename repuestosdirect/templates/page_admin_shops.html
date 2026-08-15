@@ -4,7 +4,7 @@
 <div class="flex justify-between items-center mb-4">
     <div>
         <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Gestión de talleres</h1>
-        <p class="text-sm text-stone-500">Aprueba nuevos talleres o elimina clientes que ya no operan contigo.</p>
+        <p class="text-sm text-stone-500">Aprueba talleres, ajusta crédito y términos de pago, o elimina clientes inactivos.</p>
     </div>
     <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md">Volver al Panel</a>
 </div>
@@ -18,7 +18,6 @@
     <table class="w-full text-sm">
         <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
             <tr>
-                <th class="text-left px-4 py-2">ID</th>
                 <th class="text-left px-4 py-2">Taller</th>
                 <th class="text-left px-4 py-2">Dueño</th>
                 <th class="text-left px-4 py-2">Teléfono</th>
@@ -27,14 +26,11 @@
         </thead>
         <tbody class="divide-y divide-stone-200">
             {{if not .Shops}}
-            <tr>
-                <td colspan="5" class="px-4 py-8 text-center text-stone-500">No hay talleres pendientes.</td>
-            </tr>
+            <tr><td colspan="4" class="px-4 py-8 text-center text-stone-500">No hay talleres pendientes.</td></tr>
             {{else}}
             {{range .Shops}}
             <tr class="hover:bg-stone-50">
-                <td class="px-4 py-3 font-medium">{{.ID}}</td>
-                <td class="px-4 py-3">{{.Name}}</td>
+                <td class="px-4 py-3 font-medium">{{.Name}}</td>
                 <td class="px-4 py-3">{{.Owner}}</td>
                 <td class="px-4 py-3 text-stone-500">{{.Phone}}</td>
                 <td class="px-4 py-3 text-right">
@@ -51,43 +47,60 @@
     </table>
 </div>
 
-<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Clientes activos</h2>
-<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
-    <table class="w-full text-sm">
-        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
-            <tr>
-                <th class="text-left px-4 py-2">Taller</th>
-                <th class="text-left px-4 py-2">Dueño</th>
-                <th class="text-left px-4 py-2">Crédito usado</th>
-                <th class="text-left px-4 py-2">Disponible</th>
-                <th class="text-right px-4 py-2">Acción</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-stone-200">
-            {{if not .Clients}}
-            <tr>
-                <td colspan="5" class="px-4 py-8 text-center text-stone-500">No hay clientes activos.</td>
-            </tr>
-            {{else}}
-            {{range .Clients}}
-            <tr class="hover:bg-stone-50">
-                <td class="px-4 py-3 font-medium">{{.Name}}</td>
-                <td class="px-4 py-3">{{.Owner}}</td>
-                <td class="px-4 py-3">${{printf "%.2f" .CreditUsed}}</td>
-                <td class="px-4 py-3 text-emerald-600 font-semibold">${{printf "%.2f" (sub .CreditLimit .CreditUsed)}}</td>
-                <td class="px-4 py-3 text-right">
-                    <form action="/admin/shops/remove" method="POST" class="inline"
-                        onsubmit="return confirm('¿Eliminar a {{.Name}}? Solo funciona si no tiene crédito pendiente.');">
-                        {{template "csrf" $}}
-                        <input type="hidden" name="shop_id" value="{{.ID}}">
-                        <button type="submit" class="text-red-600 hover:text-red-800 font-bold text-xs bg-red-50 hover:bg-red-100 px-3 py-1 rounded">Eliminar</button>
-                    </form>
-                </td>
-            </tr>
-            {{end}}
-            {{end}}
-        </tbody>
-    </table>
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Clientes activos — crédito y términos</h2>
+<p class="text-xs text-stone-500 mb-3">Default para nuevos talleres: $300 límite · 30 días · 2 pagos · recordatorio 3 días antes.</p>
+<div class="space-y-4">
+    {{if not .Clients}}
+    <p class="text-sm text-stone-500">No hay clientes activos.</p>
+    {{else}}
+    {{range .Clients}}
+    <div class="bg-white border border-stone-200 rounded-lg p-4">
+        <div class="flex flex-wrap justify-between gap-2 mb-3">
+            <div>
+                <h3 class="font-bold text-[#1B2A4A]">{{.Name}}</h3>
+                <p class="text-xs text-stone-500">{{.Owner}} · {{.Phone}}</p>
+            </div>
+            <div class="text-sm text-right">
+                <p>Usado: <strong>${{printf "%.2f" .CreditUsed}}</strong> / ${{printf "%.2f" .CreditLimit}}</p>
+                <p class="text-emerald-600">Disponible: ${{printf "%.2f" (sub .CreditLimit .CreditUsed)}}</p>
+                <p class="text-xs text-stone-500">{{creditTermsLabel .CreditTerms .PaymentSplits}}</p>
+            </div>
+        </div>
+        <form action="/admin/shops/credit" method="POST" class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+            {{template "csrf" $}}
+            <input type="hidden" name="shop_id" value="{{.ID}}">
+            <div>
+                <label class="block text-xs text-stone-500 mb-1">Límite (USD)</label>
+                <input type="number" step="0.01" name="credit_limit" value="{{printf "%.2f" .CreditLimit}}" required
+                    class="w-full border border-stone-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-stone-500 mb-1">Días total</label>
+                <input type="number" name="credit_terms" value="{{.CreditTerms}}" required min="1" max="365"
+                    class="w-full border border-stone-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-stone-500 mb-1"># Pagos</label>
+                <input type="number" name="payment_splits" value="{{.PaymentSplits}}" required min="1" max="12"
+                    class="w-full border border-stone-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-stone-500 mb-1">Recordar (días antes)</label>
+                <input type="number" name="reminder_days" value="{{.ReminderDays}}" required min="0" max="30"
+                    class="w-full border border-stone-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div class="flex gap-2">
+                <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1.5 rounded text-xs hover:bg-blue-800">Guardar</button>
+                <button type="submit" formaction="/admin/shops/remove" formmethod="POST"
+                    class="text-red-600 text-xs px-2 py-1.5 border border-red-200 rounded hover:bg-red-50"
+                    onclick="return confirm('¿Eliminar a {{.Name}}? Requiere saldo cero.');">
+                    Eliminar
+                </button>
+            </div>
+        </form>
+    </div>
+    {{end}}
+    {{end}}
 </div>
 
 {{template "footer" .}}
