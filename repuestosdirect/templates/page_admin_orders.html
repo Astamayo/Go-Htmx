@@ -19,11 +19,14 @@
         <tbody class="divide-y divide-stone-200">
             {{range .Orders}}
             <tr>
-                <td class="px-4 py-3 font-medium">{{.ID}}</td>
+                <td class="px-4 py-3 font-medium">
+                    <a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a>
+                </td>
                 <td class="px-4 py-3">{{.PlacedAt.Format "02 Jan 2006"}}</td>
                 <td class="px-4 py-3 font-semibold text-blue-800">{{.Status}}</td>
                 <td class="px-4 py-3">
                     <form action="/admin/orders/status" method="POST" class="flex gap-2">
+                        {{template "csrf" $}}
                         <input type="hidden" name="order_id" value="{{.ID}}">
                         <select name="status" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white">
                             <option value="Pedido">Pedido (Recibido)</option>
@@ -32,8 +35,7 @@
                             <option value="Listo para recoger">Listo para recoger</option>
                             <option value="Llegado">Llegado / Entregado</option>
                         </select>
-                        <button type="submit"
-                            class="bg-[#1B2A4A] text-white px-3 py-1 rounded hover:bg-blue-800 text-xs">Actualizar</button>
+                        <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded hover:bg-blue-800 text-xs">Actualizar</button>
                     </form>
                 </td>
             </tr>

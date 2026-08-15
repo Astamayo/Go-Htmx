@@ -40,6 +40,7 @@ type Shop struct {
 	CreditTerms  int
 	PasswordDemo string
 	Approved     bool
+	Active       bool
 }
 
 type OrderStatus string
@@ -69,6 +70,16 @@ type Order struct {
 	PlacedAt time.Time
 	DueDate  time.Time
 	Courier  string
+	PaidAt   *time.Time
+}
+
+type ReportSummary struct {
+	TotalOrders     int
+	TotalSales      float64
+	CreditOutstanding float64
+	OverdueCount    int
+	LowStockCount   int
+	ActiveShops     int
 }
 
 type Store struct {
@@ -136,6 +147,15 @@ func (s *Store) initTables() error {
 		qty INT NOT NULL,
 		unit_usd NUMERIC(10,2) NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS sessions (
+		id VARCHAR(64) PRIMARY KEY,
+		shop_id VARCHAR(50) NOT NULL DEFAULT '',
+		cart JSONB NOT NULL DEFAULT '{}',
+		csrf_token VARCHAR(64) NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL
+	);
+
 	CREATE SEQUENCE IF NOT EXISTS order_id_seq;
 	CREATE SEQUENCE IF NOT EXISTS shop_id_seq;
 	CREATE SEQUENCE IF NOT EXISTS part_id_seq;
@@ -144,21 +164,25 @@ func (s *Store) initTables() error {
 		return err
 	}
 
-	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS reorder_point INT NOT NULL DEFAULT 5`)
-	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
+	migrations := []string{
+		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS reorder_point INT NOT NULL DEFAULT 5`,
+		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`,
+		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`,
+		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS address VARCHAR(500) NOT NULL DEFAULT ''`,
+		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`,
+		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS availability VARCHAR(100) NOT NULL DEFAULT 'En stock'`,
+		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`,
+		`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_part_id_fkey`,
+		`ALTER TABLE order_items ALTER COLUMN part_id DROP NOT NULL`,
+		`ALTER TABLE order_items ADD CONSTRAINT order_items_part_id_fkey FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE SET NULL`,
+	}
+	for _, q := range migrations {
+		if _, err := s.db.Exec(q); err != nil {
+			return err
+		}
+	}
 
-	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE`)
-	s.db.Exec(`UPDATE shops SET approved = TRUE`)
-
-	s.db.Exec(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS address VARCHAR(500) NOT NULL DEFAULT ''`)
-	s.db.Exec(`ALTER TABLE parts ADD COLUMN IF NOT EXISTS availability VARCHAR(100) NOT NULL DEFAULT 'En stock'`)
-
-	s.db.Exec(`ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_part_id_fkey`)
-	s.db.Exec(`ALTER TABLE order_items ALTER COLUMN part_id DROP NOT NULL`)
-	s.db.Exec(`ALTER TABLE order_items ADD CONSTRAINT order_items_part_id_fkey FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE SET NULL`)
-
-	//s.seedInitialData()
 	return nil
 }
 
@@ -172,34 +196,154 @@ func (s *Store) seedInitialData() {
 	log.Println("Seeding initial catalog parts and demo shops...")
 
 	s.db.Exec(`
-		INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo)
-		VALUES ('S-0001', 'Taller Los Santos', 'Carlos Santos', '+18095550199', 300.00, 0.00, 15, '1234')
+		INSERT INTO shops (id, name, owner, phone, credit_limit, credit_used, credit_terms, password_demo, approved, active)
+		VALUES ('S-0001', 'Taller Los Santos', 'Carlos Santos', '+18095550199', 300.00, 0.00, 15, '1234', TRUE, TRUE)
 		ON CONFLICT (id) DO NOTHING;
 	`)
 
 	s.db.Exec(`
-		INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock) VALUES
-		('P-001', 'Toyota', 'Corolla', 2015, 'Frenos', 'Pastillas de freno delanteras', 'OEM USA', 28.50, 12),
-		('P-002', 'Toyota', 'Corolla', 2015, 'Frenos', 'Disco de freno delantero', 'Aftermarket High Quality', 45.00, 8),
-		('P-003', 'Toyota', 'Corolla', 2015, 'Motor', 'Filtro de aceite', 'OEM Japan', 8.50, 25),
-		('P-004', 'Toyota', 'Corolla', 2015, 'Suspensión', 'Amortiguador delantero derecho', 'KYB OEM', 68.00, 6)
+		INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, availability) VALUES
+		('P-001', 'Toyota', 'Corolla', 2015, 'Frenos', 'Pastillas de freno delanteras', 'OEM USA', 28.50, 12, 'En stock'),
+		('P-002', 'Toyota', 'Corolla', 2015, 'Frenos', 'Disco de freno delantero', 'Aftermarket High Quality', 45.00, 8, 'En stock'),
+		('P-003', 'Toyota', 'Corolla', 2015, 'Motor', 'Filtro de aceite', 'OEM Japan', 8.50, 25, 'En stock'),
+		('P-004', 'Toyota', 'Corolla', 2015, 'Suspensión', 'Amortiguador delantero derecho', 'KYB OEM', 68.00, 6, 'En stock')
 		ON CONFLICT (id) DO NOTHING;
 	`)
 }
 
-// Actualiza el estado de un pedido
-func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) error {
-	_, err := s.db.Exec("UPDATE orders SET status = $1 WHERE id = $2", string(status), orderID)
-	return err
+// --- Sessions ---
+
+func (s *Store) LoadSession(id string) (*Session, bool) {
+	var shopID, csrf string
+	var cartJSON []byte
+	var expires time.Time
+	err := s.db.QueryRow(
+		`SELECT shop_id, cart, csrf_token, expires_at FROM sessions WHERE id = $1 AND expires_at > now()`,
+		id,
+	).Scan(&shopID, &cartJSON, &csrf, &expires)
+	if err != nil {
+		return nil, false
+	}
+	return &Session{
+		ID:        id,
+		ShopID:    shopID,
+		Cart:      cartFromJSON(cartJSON),
+		CSRFToken: csrf,
+	}, true
 }
 
-// Elimina un repuesto (Solo funcionará si no está en un pedido existente)
+func (s *Store) SaveSession(sess *Session) {
+	sess.mu.RLock()
+	shopID := sess.ShopID
+	cart := cartToJSON(sess.Cart)
+	csrf := sess.CSRFToken
+	sess.mu.RUnlock()
+
+	_, err := s.db.Exec(`
+		INSERT INTO sessions (id, shop_id, cart, csrf_token, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET shop_id = $2, cart = $3, csrf_token = $4, expires_at = $5`,
+		sess.ID, shopID, cart, csrf, sessionExpiry(),
+	)
+	if err != nil {
+		logError("session save failed", err.Error())
+	}
+}
+
+func (s *Store) CleanExpiredSessions() {
+	s.db.Exec(`DELETE FROM sessions WHERE expires_at < now()`)
+}
+
+// --- Orders ---
+
+func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) (*Order, error) {
+	if status == StatusLlegado {
+		_, err := s.db.Exec(
+			`UPDATE orders SET status = $1, delivered_at = now() WHERE id = $2`,
+			string(status), orderID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		_, err := s.db.Exec(`UPDATE orders SET status = $1 WHERE id = $2`, string(status), orderID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.Order(orderID)
+}
+
+func (s *Store) MarkOrderPaid(orderID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var shopID sql.NullString
+	var total float64
+	var onCredit bool
+	var paidAt sql.NullTime
+	err = tx.QueryRow(
+		`SELECT shop_id, total, on_credit, paid_at FROM orders WHERE id = $1 FOR UPDATE`,
+		orderID,
+	).Scan(&shopID, &total, &onCredit, &paidAt)
+	if err != nil {
+		return fmt.Errorf("pedido no encontrado")
+	}
+	if !onCredit {
+		return fmt.Errorf("solo pedidos a crédito pueden marcarse como pagados")
+	}
+	if paidAt.Valid {
+		return fmt.Errorf("pedido ya fue pagado")
+	}
+	if !shopID.Valid {
+		return fmt.Errorf("pedido sin taller asociado")
+	}
+
+	_, err = tx.Exec(`UPDATE orders SET paid_at = now() WHERE id = $1`, orderID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
+		`UPDATE shops SET credit_used = GREATEST(credit_used - $1, 0) WHERE id = $2`,
+		total, shopID.String,
+	)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) DeletePart(partID string) error {
 	_, err := s.db.Exec("DELETE FROM parts WHERE id = $1", partID)
 	return err
 }
 
-// --- Store Queries ---
+func (s *Store) Order(orderID string) (*Order, error) {
+	o := &Order{}
+	var nullShop sql.NullString
+	var paidAt sql.NullTime
+	err := s.db.QueryRow(
+		`SELECT id, shop_id, total, on_credit, status, placed_at, due_date, courier, paid_at FROM orders WHERE id = $1`,
+		orderID,
+	).Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.PlacedAt, &o.DueDate, &o.Courier, &paidAt)
+	if err != nil {
+		return nil, err
+	}
+	if nullShop.Valid {
+		o.ShopID = nullShop.String
+	}
+	if paidAt.Valid {
+		t := paidAt.Time
+		o.PaidAt = &t
+	}
+	o.Items = s.getOrderItems(o.ID)
+	return o, nil
+}
+
+// --- Catalog ---
 
 func (s *Store) Makes() []string {
 	rows, err := s.db.Query("SELECT DISTINCT make FROM parts ORDER BY make ASC")
@@ -222,7 +366,6 @@ func (s *Store) Makes() []string {
 func (s *Store) Models(make string) []string {
 	rows, err := s.db.Query("SELECT DISTINCT model FROM parts WHERE make = $1 ORDER BY model ASC", make)
 	if err != nil {
-		log.Println("Models query error:", err)
 		return nil
 	}
 	defer rows.Close()
@@ -240,7 +383,6 @@ func (s *Store) Models(make string) []string {
 func (s *Store) Years(make, model string) []int {
 	rows, err := s.db.Query("SELECT DISTINCT year FROM parts WHERE make = $1 AND model = $2 ORDER BY year DESC", make, model)
 	if err != nil {
-		log.Println("Years query error:", err)
 		return nil
 	}
 	defer rows.Close()
@@ -255,6 +397,31 @@ func (s *Store) Years(make, model string) []int {
 	return years
 }
 
+func (s *Store) SearchParts(query string) []Part {
+	q := "%" + query + "%"
+	rows, err := s.db.Query(`
+		SELECT id, make, model, year, category, name, source, price_usd, stock, availability
+		FROM parts
+		WHERE name ILIKE $1 OR category ILIKE $1 OR make ILIKE $1 OR model ILIKE $1 OR id ILIKE $1
+		ORDER BY name ASC LIMIT 50`, q)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanParts(rows)
+}
+
+func scanParts(rows *sql.Rows) []Part {
+	var parts []Part
+	for rows.Next() {
+		var p Part
+		if err := rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability); err == nil {
+			parts = append(parts, p)
+		}
+	}
+	return parts
+}
+
 func (s *Store) StockReport() []StockRow {
 	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability FROM parts ORDER BY name`)
 	defer rows.Close()
@@ -263,9 +430,9 @@ func (s *Store) StockReport() []StockRow {
 		var p Part
 		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint, &p.Availability)
 		status := "ok"
-		if p.Stock == 0 {
+		if p.Stock == 0 && isInStock(p.Availability) {
 			status = "out"
-		} else if p.Stock <= p.ReorderPoint {
+		} else if p.Stock <= p.ReorderPoint && isInStock(p.Availability) {
 			status = "reorder"
 		}
 		out = append(out, StockRow{Part: p, Status: status})
@@ -273,28 +440,31 @@ func (s *Store) StockReport() []StockRow {
 	return out
 }
 
-func (s *Store) PendingDeliveries() []*Order {
-	rows, err := s.db.Query(`SELECT id, shop_id, total, on_credit, status, courier, placed_at, due_date
-		FROM orders WHERE courier = '' ORDER BY placed_at ASC`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	var out []*Order
-	for rows.Next() {
-		o := &Order{}
-		var nullShop sql.NullString
-		rows.Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.Courier, &o.PlacedAt, &o.DueDate)
-		if nullShop.Valid {
-			o.ShopID = nullShop.String
+func (s *Store) LowStockParts() []StockRow {
+	var out []StockRow
+	for _, row := range s.StockReport() {
+		if row.Status == "reorder" || row.Status == "out" {
+			out = append(out, row)
 		}
-		out = append(out, o)
 	}
 	return out
 }
 
+func (s *Store) PendingDeliveries() []*Order {
+	rows, err := s.db.Query(`
+		SELECT id, shop_id, total, on_credit, status, courier, placed_at, due_date
+		FROM orders
+		WHERE courier = '' AND status = $1 AND shop_id IS NOT NULL
+		ORDER BY placed_at ASC`, string(StatusListo))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanOrders(rows, s)
+}
+
 func (s *Store) AssignCourier(orderID, courier string) error {
-	res, err := s.db.Exec(`UPDATE orders SET courier = $1, delivered_at = now() WHERE id = $2`, courier, orderID)
+	res, err := s.db.Exec(`UPDATE orders SET courier = $1 WHERE id = $2`, courier, orderID)
 	if err != nil {
 		return err
 	}
@@ -305,16 +475,23 @@ func (s *Store) AssignCourier(orderID, courier string) error {
 	return nil
 }
 
+func (s *Store) DriverReadyOrders() []*Order {
+	rows, err := s.db.Query(`
+		SELECT id, shop_id, total, on_credit, status, placed_at, due_date
+		FROM orders
+		WHERE status = $1 AND shop_id IS NOT NULL
+		ORDER BY placed_at ASC`, string(StatusListo))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanOrders(rows, s)
+}
+
 func (s *Store) PartsFor(make, model string, year int) []Part {
 	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, availability FROM parts WHERE make = $1 AND model = $2 AND year = $3`, make, model, year)
 	defer rows.Close()
-	var parts []Part
-	for rows.Next() {
-		var p Part
-		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability)
-		parts = append(parts, p)
-	}
-	return parts
+	return scanParts(rows)
 }
 
 func (s *Store) Part(id string) (Part, bool) {
@@ -324,71 +501,108 @@ func (s *Store) Part(id string) (Part, bool) {
 	return p, err == nil
 }
 
-func (s *Store) Shop(id string) (*Shop, bool) {
+// --- Shops ---
+
+func scanShop(row *sql.Row) (*Shop, error) {
 	sh := &Shop{}
-	err := s.db.QueryRow(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE id = $1`, id).
-		Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+	err := row.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved, &sh.Active)
+	return sh, err
+}
+
+func (s *Store) Shop(id string) (*Shop, bool) {
+	sh, err := scanShop(s.db.QueryRow(
+		`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE id = $1 AND active = TRUE`, id))
 	return sh, err == nil
 }
 
-func (s *Store) ShopByLogin(name, password string) (*Shop, bool) {
-	sh := &Shop{}
-	err := s.db.QueryRow(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE name = $1 AND password_demo = $2`, name, password).
-		Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
+func (s *Store) ShopByName(name string) (*Shop, bool) {
+	sh, err := scanShop(s.db.QueryRow(
+		`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE name = $1 AND active = TRUE`, name))
 	return sh, err == nil
 }
 
 func (s *Store) ShopNameTaken(name string) bool {
 	var exists bool
-	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE name = $1)", name).Scan(&exists)
-	if err != nil {
-		return false
-	}
-	return exists
+	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE name = $1 AND active = TRUE)", name).Scan(&exists)
+	return err == nil && exists
 }
 
 func (s *Store) AllShops() []*Shop {
-	rows, _ := s.db.Query("SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops ORDER BY name ASC")
+	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
+}
+
+func (s *Store) ActiveClients() []*Shop {
+	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = TRUE ORDER BY name ASC`)
+}
+
+func (s *Store) PendingShops() []*Shop {
+	return s.queryShops(`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE active = TRUE AND approved = FALSE ORDER BY id ASC`)
+}
+
+func (s *Store) queryShops(q string) []*Shop {
+	rows, err := s.db.Query(q)
+	if err != nil {
+		return nil
+	}
 	defer rows.Close()
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
-		shops = append(shops, sh)
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved, &sh.Active); err == nil {
+			shops = append(shops, sh)
+		}
 	}
 	return shops
 }
 
-func (s *Store) AddShop(name, owner, phone, address, password string) *Shop {
+func (s *Store) AddShop(name, owner, phone, address, password string) (*Shop, error) {
+	hashed, err := hashPassword(password)
+	if err != nil {
+		return nil, err
+	}
 	var seq int
 	s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("S-%04d", seq)
 
-	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved)
-              VALUES ($1, $2, $3, $4, $5, 300.00, 0.00, 15, $6, FALSE)
-              RETURNING id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved`
-	sh := &Shop{}
-	s.db.QueryRow(query, id, name, owner, phone, address, password).Scan(
-		&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved,
-	)
-	return sh
-}
-
-func (s *Store) PendingShops() []*Shop {
-	rows, _ := s.db.Query("SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved FROM shops WHERE approved = FALSE ORDER BY id ASC")
-	defer rows.Close()
-	var shops []*Shop
-	for rows.Next() {
-		sh := &Shop{}
-		rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address, &sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PasswordDemo, &sh.Approved)
-		shops = append(shops, sh)
-	}
-	return shops
+	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active)
+              VALUES ($1, $2, $3, $4, $5, 300.00, 0.00, 15, $6, FALSE, TRUE)
+              RETURNING id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active`
+	sh, err := scanShop(s.db.QueryRow(query, id, name, owner, phone, address, hashed))
+	return sh, err
 }
 
 func (s *Store) ApproveShop(id string) error {
-	_, err := s.db.Exec("UPDATE shops SET approved = TRUE WHERE id = $1", id)
+	_, err := s.db.Exec("UPDATE shops SET approved = TRUE WHERE id = $1 AND active = TRUE", id)
 	return err
+}
+
+func (s *Store) RemoveShop(id string) error {
+	sh, ok := s.Shop(id)
+	if !ok {
+		// allow removing inactive
+		var err error
+		sh, err = scanShop(s.db.QueryRow(
+			`SELECT id, name, owner, phone, address, credit_limit, credit_used, credit_terms, password_demo, approved, active FROM shops WHERE id = $1`, id))
+		if err != nil {
+			return fmt.Errorf("taller no encontrado")
+		}
+	}
+	if sh.CreditUsed > 0 {
+		return fmt.Errorf("no se puede eliminar: el taller tiene $%.2f de crédito pendiente", sh.CreditUsed)
+	}
+	var unpaid int
+	s.db.QueryRow(`
+		SELECT COUNT(*) FROM orders
+		WHERE shop_id = $1 AND on_credit = TRUE AND paid_at IS NULL`, id).Scan(&unpaid)
+	if unpaid > 0 {
+		return fmt.Errorf("no se puede eliminar: hay %d pedido(s) a crédito sin pagar", unpaid)
+	}
+	_, err := s.db.Exec(`UPDATE shops SET active = FALSE, approved = FALSE WHERE id = $1`, id)
+	return err
+}
+
+func (s *Store) UpgradePasswordHash(shopID, hashed string) {
+	s.db.Exec(`UPDATE shops SET password_demo = $1 WHERE id = $2`, hashed, shopID)
 }
 
 func (s *Store) AddPart(makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability string) error {
@@ -412,17 +626,43 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 		total += it.UnitUSD * float64(it.Qty)
 	}
 
+	for _, item := range items {
+		var stock int
+		var avail string
+		var partName string
+		err = tx.QueryRow(
+			`SELECT stock, availability, name FROM parts WHERE id = $1 FOR UPDATE`,
+			item.PartID,
+		).Scan(&stock, &avail, &partName)
+		if err != nil {
+			return nil, fmt.Errorf("repuesto no encontrado: %s", item.PartID)
+		}
+		if isInStock(avail) && stock < item.Qty {
+			return nil, fmt.Errorf("stock insuficiente para %s (disponible: %d)", partName, stock)
+		}
+		if isInStock(avail) {
+			_, err = tx.Exec(`UPDATE parts SET stock = stock - $1 WHERE id = $2`, item.Qty, item.PartID)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	terms := 15
 	if shopID != "" && onCredit {
-		sh, ok := s.Shop(shopID)
-		if !ok {
+		var creditLimit, creditUsed float64
+		var creditTerms int
+		err = tx.QueryRow(
+			`SELECT credit_limit, credit_used, credit_terms FROM shops WHERE id = $1 AND active = TRUE FOR UPDATE`,
+			shopID,
+		).Scan(&creditLimit, &creditUsed, &creditTerms)
+		if err != nil {
 			return nil, fmt.Errorf("taller no encontrado")
 		}
-		if (sh.CreditLimit - sh.CreditUsed) < total {
-			return nil, fmt.Errorf("crédito insuficiente ($%.2f disponible)", sh.CreditLimit-sh.CreditUsed)
+		if (creditLimit - creditUsed) < total {
+			return nil, fmt.Errorf("crédito insuficiente ($%.2f disponible)", creditLimit-creditUsed)
 		}
-		terms = sh.CreditTerms
-
+		terms = creditTerms
 		_, err = tx.Exec("UPDATE shops SET credit_used = credit_used + $1 WHERE id = $2", total, shopID)
 		if err != nil {
 			return nil, err
@@ -437,7 +677,10 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	orderID := fmt.Sprintf("ORD-%04d", seq)
 
 	placedAt := time.Now()
-	dueDate := placedAt.AddDate(0, 0, terms)
+	dueDate := placedAt
+	if onCredit {
+		dueDate = placedAt.AddDate(0, 0, terms)
+	}
 	status := StatusPedido
 
 	var nullShopID sql.NullString
@@ -479,13 +722,7 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	}, nil
 }
 
-func (s *Store) OrdersFor(shopID string) []*Order {
-	rows, err := s.db.Query("SELECT id, shop_id, total, on_credit, status, placed_at, due_date FROM orders WHERE shop_id = $1 ORDER BY placed_at DESC", shopID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
+func scanOrders(rows *sql.Rows, s *Store) []*Order {
 	var orders []*Order
 	for rows.Next() {
 		o := &Order{}
@@ -500,25 +737,49 @@ func (s *Store) OrdersFor(shopID string) []*Order {
 	return orders
 }
 
+func (s *Store) OrdersFor(shopID string) []*Order {
+	rows, err := s.db.Query("SELECT id, shop_id, total, on_credit, status, placed_at, due_date FROM orders WHERE shop_id = $1 ORDER BY placed_at DESC", shopID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanOrders(rows, s)
+}
+
 func (s *Store) AllOrdersSortedByDue() []*Order {
 	rows, err := s.db.Query("SELECT id, shop_id, total, on_credit, status, placed_at, due_date FROM orders ORDER BY due_date ASC")
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
+	return scanOrders(rows, s)
+}
 
-	var orders []*Order
-	for rows.Next() {
-		o := &Order{}
-		var nullShop sql.NullString
-		rows.Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.PlacedAt, &o.DueDate)
-		if nullShop.Valid {
-			o.ShopID = nullShop.String
-		}
-		o.Items = s.getOrderItems(o.ID)
-		orders = append(orders, o)
+func (s *Store) CreditOrdersForAging() []*Order {
+	rows, err := s.db.Query(`
+		SELECT id, shop_id, total, on_credit, status, placed_at, due_date
+		FROM orders
+		WHERE on_credit = TRUE AND paid_at IS NULL AND shop_id IS NOT NULL
+		ORDER BY due_date ASC`)
+	if err != nil {
+		return nil
 	}
-	return orders
+	defer rows.Close()
+	return scanOrders(rows, s)
+}
+
+func (s *Store) ReportSummary() ReportSummary {
+	var r ReportSummary
+	s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(total),0) FROM orders`).Scan(&r.TotalOrders, &r.TotalSales)
+	s.db.QueryRow(`
+		SELECT COALESCE(SUM(total),0)
+		FROM orders WHERE on_credit = TRUE AND paid_at IS NULL`).Scan(&r.CreditOutstanding)
+	s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM orders WHERE on_credit = TRUE AND paid_at IS NULL AND due_date < now()`).Scan(&r.OverdueCount)
+	s.db.QueryRow(`SELECT COUNT(*) FROM shops WHERE active = TRUE AND approved = TRUE`).Scan(&r.ActiveShops)
+	r.LowStockCount = len(s.LowStockParts())
+	return r
 }
 
 func (s *Store) getOrderItems(orderID string) []OrderItem {

@@ -8,6 +8,7 @@
   {{end}}
 
   <form method="POST" action="/signup" class="space-y-3">
+    {{template "csrf" .}}
     <div>
       <label class="block text-xs font-semibold text-stone-500 mb-1">Nombre del taller</label>
       <input type="text" name="name" required class="w-full border border-stone-300 rounded px-3 py-2 text-sm">

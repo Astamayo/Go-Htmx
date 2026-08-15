@@ -35,7 +35,7 @@
     <tbody class="divide-y divide-stone-200">
       {{range .Orders}}
       <tr>
-        <td class="px-4 py-2 font-medium">{{.ID}}</td>
+        <td class="px-4 py-2 font-medium"><a href="/pedido/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a></td>
         <td class="px-4 py-2 text-stone-500">{{.PlacedAt.Format "02 Jan 2006"}}</td>
         <td class="px-4 py-2">${{printf "%.2f" .Total}}</td>
         <td class="px-4 py-2">{{if .OnCredit}}Crédito{{else}}Contado{{end}}</td>

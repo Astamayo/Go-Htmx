@@ -4,18 +4,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{.CSRFToken}}">
   <title>{{.Title}} · RepuestosDirect</title>
-  <!-- DEMO ONLY: Tailwind + HTMX via CDN for fast iteration.
-       Production build should compile Tailwind locally and self-host
-       htmx.min.js (a few KB) so the site keeps working on slow 3G/4G
-       and doesn't depend on external CDNs. See README.md. -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <style>
-    body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
-    .htmx-indicator{opacity:0;transition:opacity .15s}
-    .htmx-request .htmx-indicator{opacity:1}
-  </style>
+  <script src="/static/js/htmx.min.js"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    document.addEventListener('htmx:configRequest', function(e) {
+      var token = document.querySelector('meta[name="csrf-token"]');
+      if (token && token.content) {
+        e.detail.parameters['csrf_token'] = token.content;
+      }
+    });
+  </script>
 </head>
 <body class="bg-stone-100 text-stone-800 min-h-screen">
   <header class="bg-[#1B2A4A] text-white">
@@ -23,6 +24,7 @@
       <a href="/" class="font-bold text-lg tracking-tight">Repuestos<span class="text-[#C99A5B]">Direct</span></a>
       <div class="flex items-center gap-4 text-sm">
         <a href="/catalogo" class="hover:text-[#C99A5B]">Catálogo</a>
+        <a href="/buscar" class="hover:text-[#C99A5B]">Buscar</a>
         {{template "cart_badge" .CartCount}}
         {{if .Shop}}
           <a href="/dashboard" class="hover:text-[#C99A5B]">{{.Shop.Name}}</a>
@@ -38,7 +40,7 @@
 {{define "footer"}}
   </main>
   <footer class="max-w-5xl mx-auto px-4 py-8 text-xs text-stone-400">
-    RepuestosDirect — demo de plataforma de pedidos (Go + HTMX, sin dependencias externas)
+    RepuestosDirect — plataforma de pedidos (Go + HTMX + PostgreSQL)
   </footer>
 </body>
 </html>

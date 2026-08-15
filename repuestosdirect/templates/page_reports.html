@@ -1,0 +1,96 @@
+{{define "page_reports"}}
+{{template "header" .}}
+
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Reportes</h1>
+        <p class="text-sm text-stone-500">Resumen del negocio y alertas operativas.</p>
+    </div>
+    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 px-4 py-2 rounded-md">Volver al Panel</a>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white border border-stone-200 rounded-lg p-4">
+        <p class="text-xs text-stone-400">Pedidos totales</p>
+        <p class="text-2xl font-bold text-[#1B2A4A]">{{.Summary.TotalOrders}}</p>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-lg p-4">
+        <p class="text-xs text-stone-400">Ventas totales</p>
+        <p class="text-2xl font-bold text-emerald-600">${{printf "%.2f" .Summary.TotalSales}}</p>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-lg p-4">
+        <p class="text-xs text-stone-400">Crédito pendiente</p>
+        <p class="text-2xl font-bold text-amber-600">${{printf "%.2f" .Summary.CreditOutstanding}}</p>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-lg p-4">
+        <p class="text-xs text-stone-400">Talleres activos</p>
+        <p class="text-2xl font-bold text-[#1B2A4A]">{{.Summary.ActiveShops}}</p>
+    </div>
+</div>
+
+{{if gt .Summary.OverdueCount 0}}
+<div class="mb-6 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-4 py-3">
+    ⚠️ {{.Summary.OverdueCount}} pedido(s) a crédito vencido(s).
+</div>
+{{end}}
+
+{{if .LowStock}}
+<div class="mb-8">
+    <h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Alertas de inventario bajo ({{.Summary.LowStockCount}})</h2>
+    <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
+                <tr>
+                    <th class="text-left px-4 py-2">Pieza</th>
+                    <th class="text-left px-4 py-2">Vehículo</th>
+                    <th class="text-center px-4 py-2">Stock</th>
+                    <th class="text-center px-4 py-2">Estado</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-200">
+                {{range .LowStock}}
+                <tr>
+                    <td class="px-4 py-2 font-medium">{{.Part.Name}}</td>
+                    <td class="px-4 py-2 text-stone-500">{{.Part.Make}} {{.Part.Model}} {{.Part.Year}}</td>
+                    <td class="px-4 py-2 text-center font-bold">{{.Part.Stock}}</td>
+                    <td class="px-4 py-2 text-center">
+                        {{if eq .Status "out"}}
+                        <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Agotado</span>
+                        {{else}}
+                        <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">Reordenar</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
+
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Pedidos recientes</h2>
+<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
+            <tr>
+                <th class="text-left px-4 py-2">Pedido</th>
+                <th class="text-left px-4 py-2">Fecha</th>
+                <th class="text-left px-4 py-2">Total</th>
+                <th class="text-left px-4 py-2">Estado</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-200">
+            {{range .RecentOrders}}
+            <tr>
+                <td class="px-4 py-2"><a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a></td>
+                <td class="px-4 py-2">{{.PlacedAt.Format "02 Jan 2006"}}</td>
+                <td class="px-4 py-2">${{printf "%.2f" .Total}}</td>
+                <td class="px-4 py-2">{{.Status}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+{{end}}

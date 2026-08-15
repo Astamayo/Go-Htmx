@@ -1,0 +1,12 @@
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.htmx-request .htmx-indicator {
+  opacity: 1;
+}

@@ -3,7 +3,7 @@
 
 <div class="max-w-md mx-auto">
     <h1 class="text-2xl font-bold text-[#1B2A4A] mb-1">Mis Rutas (Repartidor)</h1>
-    <p class="text-sm text-stone-500 mb-6">Pedidos pendientes de entrega física.</p>
+    <p class="text-sm text-stone-500 mb-6">Pedidos listos para entrega física.</p>
 
     <div class="space-y-4">
         {{if not .DriverRoutes}}
@@ -21,26 +21,20 @@
 
             <div class="bg-stone-50 rounded p-3 mb-4 text-sm text-stone-600">
                 <p class="flex items-start gap-2 mb-2">📍 <span>{{.Shop.Address}}</span></p>
-                <p class="flex items-center gap-2 mb-1">📞 <a href="tel:{{.Shop.Phone}}"
-                        class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
-                class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
+                <p class="flex items-center gap-2 mb-1">📞 <a href="tel:{{.Shop.Phone}}" class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
                 <p class="flex items-center gap-2 mb-1">📦 Pedido: <strong>{{.Order.ID}}</strong></p>
-                <p class="flex items-center gap-2">💰 Cobrar a Crédito: <strong>${{printf "%.2f" .Order.Total}}</strong>
-                </p>
+                <p class="flex items-center gap-2">💰 Total: <strong>${{printf "%.2f" .Order.Total}}</strong>{{if .Order.OnCredit}} (crédito){{end}}</p>
             </div>
 
             <div class="flex gap-2">
-                <!-- Botón directo a Google Maps -->
-                <a href="https://maps.google.com/?q={{.Shop.Name}}" target="_blank"
+                <a href="{{mapsQuery .Shop.Address .Shop.Name}}" target="_blank"
                     class="w-1/2 bg-stone-100 text-stone-700 font-semibold py-2 rounded text-center border border-stone-200 hover:bg-stone-200">
                     📍 Mapa
                 </a>
-                <!-- Marcar como entregado -->
-                <form action="/admin/orders/status" method="POST" class="w-1/2">
+                <form action="/driver/deliver" method="POST" class="w-1/2">
+                    {{template "csrf" $}}
                     <input type="hidden" name="order_id" value="{{.Order.ID}}">
-                    <input type="hidden" name="status" value="Llegado">
-                    <button type="submit"
-                        class="w-full bg-emerald-600 text-white font-semibold py-2 rounded hover:bg-emerald-700">
+                    <button type="submit" class="w-full bg-emerald-600 text-white font-semibold py-2 rounded hover:bg-emerald-700">
                         ✅ Entregado
                     </button>
                 </form>

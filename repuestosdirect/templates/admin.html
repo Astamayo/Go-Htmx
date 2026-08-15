@@ -5,32 +5,64 @@
   <p class="text-sm text-stone-500">Centro de control del negocio.</p>
 </div>
 
-<!-- Menú de Acceso Rápido -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-  <a href="/admin/orders"
-    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+  <div class="bg-white border border-stone-200 p-4 rounded-lg">
+    <p class="text-xs text-stone-400">Ventas</p>
+    <p class="text-lg font-bold text-emerald-600">${{printf "%.2f" .Summary.TotalSales}}</p>
+  </div>
+  <div class="bg-white border border-stone-200 p-4 rounded-lg">
+    <p class="text-xs text-stone-400">Crédito pendiente</p>
+    <p class="text-lg font-bold text-amber-600">${{printf "%.2f" .Summary.CreditOutstanding}}</p>
+  </div>
+  <div class="bg-white border border-stone-200 p-4 rounded-lg">
+    <p class="text-xs text-stone-400">Vencidos</p>
+    <p class="text-lg font-bold text-red-600">{{.Summary.OverdueCount}}</p>
+  </div>
+  <div class="bg-white border border-stone-200 p-4 rounded-lg">
+    <p class="text-xs text-stone-400">Stock bajo</p>
+    <p class="text-lg font-bold text-yellow-600">{{.Summary.LowStockCount}}</p>
+  </div>
+  <div class="bg-white border border-stone-200 p-4 rounded-lg">
+    <p class="text-xs text-stone-400">Talleres</p>
+    <p class="text-lg font-bold text-[#1B2A4A]">{{.Summary.ActiveShops}}</p>
+  </div>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+  <a href="/admin/orders" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">📦 Pedidos</h3>
     <p class="text-xs text-stone-500 mt-1">Actualizar estados</p>
+  </a>
+  <a href="/admin/delivery" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">🚛 Entregas</h3>
+    <p class="text-xs text-stone-500 mt-1">Asignar mensajeros</p>
   </a>
   <a href="/driver" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">🚚 Repartidor</h3>
     <p class="text-xs text-stone-500 mt-1">Vista móvil de rutas</p>
   </a>
-  <a href="/admin/inventory"
-    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+  <a href="/admin/inventory" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
     <h3 class="font-bold text-[#1B2A4A]">⚙️ Inventario</h3>
     <p class="text-xs text-stone-500 mt-1">Gestión de piezas</p>
   </a>
-  <a href="/admin/shops"
-    class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
-    <h3 class="font-bold text-[#1B2A4A]">✅ Aprobaciones</h3>
-    <p class="text-xs text-stone-500 mt-1">Nuevos talleres</p>
+  <a href="/admin/shops" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">🏪 Talleres</h3>
+    <p class="text-xs text-stone-500 mt-1">Aprobar / eliminar</p>
+  </a>
+  <a href="/admin/reports" class="bg-white border border-stone-200 p-4 rounded-lg shadow-sm hover:border-blue-500 transition">
+    <h3 class="font-bold text-[#1B2A4A]">📊 Reportes</h3>
+    <p class="text-xs text-stone-500 mt-1">Resumen del negocio</p>
   </a>
 </div>
 
-<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Cuentas por cobrar</h2>
+{{if .LowStock}}
+<div class="mb-6 text-sm bg-yellow-50 text-yellow-800 border border-yellow-200 rounded px-4 py-3">
+  ⚠️ {{len .LowStock}} pieza(s) con stock bajo o agotado. <a href="/admin/inventory" class="underline font-semibold">Ver inventario</a>
+</div>
+{{end}}
+
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Cuentas por cobrar (crédito)</h2>
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
-  <!-- (Tu tabla actual de Cuentas por Cobrar va aquí) -->
   <table class="w-full text-sm">
     <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
       <tr>
@@ -39,23 +71,36 @@
         <th class="text-left px-4 py-2">Total</th>
         <th class="text-left px-4 py-2">Vence</th>
         <th class="text-left px-4 py-2">Estado</th>
+        <th class="text-right px-4 py-2">Acción</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-stone-200">
+      {{if not .Rows}}
+      <tr><td colspan="6" class="px-4 py-6 text-center text-stone-500">No hay cuentas por cobrar pendientes.</td></tr>
+      {{else}}
       {{range .Rows}}
       <tr>
-        <td class="px-4 py-2 font-medium">{{.Order.ID}}</td>
+        <td class="px-4 py-2 font-medium"><a href="/admin/orders/{{.Order.ID}}" class="text-blue-600 hover:underline">{{.Order.ID}}</a></td>
         <td class="px-4 py-2">{{.ShopName}}</td>
         <td class="px-4 py-2">${{printf "%.2f" .Order.Total}}</td>
         <td class="px-4 py-2 text-stone-500">{{.Order.DueDate.Format "02 Jan 2006"}}</td>
         <td class="px-4 py-2">
           {{if .Overdue}}
-          <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido</span>
+          <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Vencido ({{.DaysOverdue}}d)</span>
           {{else}}
           <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Al día</span>
           {{end}}
         </td>
+        <td class="px-4 py-2 text-right">
+          <form action="/admin/orders/pay" method="POST" class="inline">
+            {{template "csrf" $}}
+            <input type="hidden" name="order_id" value="{{.Order.ID}}">
+            <button type="submit" class="text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700"
+              onclick="return confirm('¿Marcar como pagado?')">Pagado</button>
+          </form>
+        </td>
       </tr>
+      {{end}}
       {{end}}
     </tbody>
   </table>

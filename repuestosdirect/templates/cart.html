@@ -15,12 +15,12 @@
         <div>
           <p class="text-sm font-semibold">{{.Part.Name}}</p>
           <p class="text-xs text-stone-500">
-            {{.Part.Make}} {{.Part.Model}} {{.Part.Year}} ·
-            {{if eq .Part.Source "local"}}en stock local{{else}}por pedido, 3 a 4 semanas{{end}}
+            {{.Part.Make}} {{.Part.Model}} {{.Part.Year}} · {{availabilityShort .Part.Availability}}
           </p>
         </div>
         <div class="flex items-center gap-3 text-sm">
-          <form hx-post="/cart/update" hx-target="body">
+          <form method="POST" action="/cart/update">
+            {{template "csrf" $}}
             <input type="hidden" name="part_id" value="{{.Part.ID}}">
             <input type="number" name="qty" value="{{.Qty}}" min="0" class="w-14 border border-stone-300 rounded px-2 py-1 text-sm"
               onchange="this.form.requestSubmit()">
@@ -40,6 +40,7 @@
       </div>
 
       <form method="POST" action="/order/place" class="flex flex-wrap gap-3 items-center">
+        {{template "csrf" .}}
         <label class="text-sm flex items-center gap-2">
           <input type="radio" name="payment" value="cash" checked> Pagar de contado
         </label>
@@ -53,9 +54,9 @@
     {{else}}
       <p class="text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded px-3 py-2">
         Para pagar a crédito y hacer seguimiento del pedido, <a href="/login" class="underline font-semibold">inicia sesión con tu taller</a>.
-        También puedes continuar como invitado pagando de contado.
       </p>
       <form method="POST" action="/order/place" class="mt-3">
+        {{template "csrf" .}}
         <input type="hidden" name="payment" value="cash">
         <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
           Confirmar pedido (contado, sin cuenta)

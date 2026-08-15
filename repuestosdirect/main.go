@@ -1,69 +1,31 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"html/template"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
-// Global store reference
 var store *Store
-
-// ---------------------------------------------------------------------
-// Sessions
-// ---------------------------------------------------------------------
-
-type Session struct {
-	Mu     sync.RWMutex
-	ShopID string
-	Cart   map[string]int // partID -> qty
-}
-
-var (
-	sessMu sync.Mutex
-	sess   = map[string]*Session{}
-)
-
-func newSessionID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func getSession(w http.ResponseWriter, r *http.Request) *Session {
-	c, err := r.Cookie("sid")
-	if err == nil {
-		sessMu.Lock()
-		s, ok := sess[c.Value]
-		sessMu.Unlock()
-		if ok {
-			return s
-		}
-	}
-	sid := newSessionID()
-	http.SetCookie(w, &http.Cookie{Name: "sid", Value: sid, Path: "/", HttpOnly: true, MaxAge: 86400 * 7})
-	s := &Session{Cart: map[string]int{}}
-	sessMu.Lock()
-	sess[sid] = s
-	sessMu.Unlock()
-	return s
-}
-
-// ---------------------------------------------------------------------
-// Templates
-// ---------------------------------------------------------------------
-
 var tmpl *template.Template
 
 func loadTemplates() {
-	tmpl = template.Must(template.ParseGlob("templates/*.html"))
+	funcMap := template.FuncMap{
+		"availabilityLabel": availabilityLabel,
+		"availabilityShort": availabilityShort,
+		"isInStock":         isInStock,
+		"mapsQuery":         mapsQuery,
+		"lineTotal": func(qty int, unit float64) float64 {
+			return float64(qty) * unit
+		},
+		"sub": func(a, b float64) float64 {
+			return a - b
+		},
+	}
+	tmpl = template.Must(template.New("").Funcs(funcMap).ParseGlob("templates/*.html"))
 }
 
 type PageData struct {
@@ -71,73 +33,34 @@ type PageData struct {
 	Shop      *Shop
 	CartCount int
 	Error     string
+	CSRFToken string
 	Data      any
 }
 
-type inventoryData struct{ StockRows []StockRow }
+type inventoryData struct{ StockRows, LowStock []StockRow }
 type deliveryData struct{ Pending []*Order }
-
-type pendingData struct{ Shops []*Shop }
-
+type pendingData struct{ Pending, Clients []*Shop }
 type orderManageData struct{ Orders []*Order }
+type orderDetailData struct {
+	Order     *Order
+	ShopName  string
+	ShopPhone string
+}
+type searchData struct {
+	Query string
+	Parts []Part
+}
+type reportsData struct {
+	Summary     ReportSummary
+	LowStock    []StockRow
+	RecentOrders []*Order
+}
 
 type DriverRoute struct {
 	Order *Order
 	Shop  *Shop
 }
 type driverData struct{ Routes []DriverRoute }
-
-func render(w http.ResponseWriter, page string, pd PageData) {
-	type ctx struct {
-		Title           string
-		Shop            *Shop
-		CartCount       int
-		Error           string
-		Makes           []string
-		Shops           []*Shop
-		Items           []CartLine
-		Total           float64
-		CreditAvailable float64
-		Orders          []*Order
-		Order           *Order
-		Rows            []AgingRow
-		StockRows       []StockRow
-		Pending         []*Order
-		DriverRoutes    []DriverRoute
-	}
-	c := ctx{Title: pd.Title, Shop: pd.Shop, CartCount: pd.CartCount, Error: pd.Error}
-	switch d := pd.Data.(type) {
-	case catalogData:
-		c.Makes = d.Makes
-	case loginData:
-		c.Shops = d.Shops
-	case cartData:
-		c.Items = d.Items
-		c.Total = d.Total
-		c.CreditAvailable = d.CreditAvailable
-	case dashboardData:
-		c.Orders = d.Orders
-		c.CreditAvailable = d.CreditAvailable
-	case confirmData:
-		c.Order = d.Order
-	case adminData:
-		c.Rows = d.Rows
-	case inventoryData:
-		c.StockRows = d.StockRows
-	case deliveryData:
-		c.Pending = d.Pending
-	case pendingData:
-		c.Shops = d.Shops
-	case orderManageData:
-		c.Orders = d.Orders
-	case driverData:
-		c.DriverRoutes = d.Routes
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
-		log.Println("template error:", err)
-	}
-}
 
 type catalogData struct{ Makes []string }
 type loginData struct{ Shops []*Shop }
@@ -162,54 +85,114 @@ type AgingRow struct {
 	Overdue     bool
 	DaysOverdue int
 }
-type adminData struct{ Rows []AgingRow }
+type adminData struct {
+	Rows      []AgingRow
+	Summary   ReportSummary
+	LowStock  []StockRow
+}
 
-// ---------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------
-
-func handleInventory(w http.ResponseWriter, r *http.Request) {
+func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 	s := getSession(w, r)
-	render(w, "page_inventory", PageData{Title: "Inventario", Shop: currentShop(r, s), CartCount: cartCount(s),
-		Data: inventoryData{StockRows: store.StockReport()}})
+	if pd.CSRFToken == "" {
+		pd.CSRFToken = s.csrfToken()
+	}
+
+	type ctx struct {
+		Title           string
+		Shop            *Shop
+		CartCount       int
+		Error           string
+		CSRFToken       string
+		Makes           []string
+		Shops           []*Shop
+		Clients         []*Shop
+		Items           []CartLine
+		Total           float64
+		CreditAvailable float64
+		Orders          []*Order
+		Order           *Order
+		ShopName        string
+		ShopPhone       string
+		Rows            []AgingRow
+		StockRows       []StockRow
+		LowStock        []StockRow
+		Pending         []*Order
+		DriverRoutes    []DriverRoute
+		Query           string
+		Parts           []Part
+		Summary         ReportSummary
+		RecentOrders    []*Order
+	}
+	c := ctx{
+		Title: pd.Title, Shop: pd.Shop, CartCount: pd.CartCount,
+		Error: pd.Error, CSRFToken: pd.CSRFToken,
+	}
+	switch d := pd.Data.(type) {
+	case catalogData:
+		c.Makes = d.Makes
+	case loginData:
+		c.Shops = d.Shops
+	case cartData:
+		c.Items = d.Items
+		c.Total = d.Total
+		c.CreditAvailable = d.CreditAvailable
+	case dashboardData:
+		c.Orders = d.Orders
+		c.CreditAvailable = d.CreditAvailable
+	case confirmData:
+		c.Order = d.Order
+	case adminData:
+		c.Rows = d.Rows
+		c.Summary = d.Summary
+		c.LowStock = d.LowStock
+	case inventoryData:
+		c.StockRows = d.StockRows
+		c.LowStock = d.LowStock
+	case deliveryData:
+		c.Pending = d.Pending
+	case pendingData:
+		c.Shops = d.Pending
+		c.Clients = d.Clients
+	case orderManageData:
+		c.Orders = d.Orders
+	case orderDetailData:
+		c.Order = d.Order
+		c.ShopName = d.ShopName
+		c.ShopPhone = d.ShopPhone
+	case driverData:
+		c.DriverRoutes = d.Routes
+	case searchData:
+		c.Query = d.Query
+		c.Parts = d.Parts
+	case reportsData:
+		c.Summary = d.Summary
+		c.LowStock = d.LowStock
+		c.RecentOrders = d.RecentOrders
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
+		logError("template error", err.Error())
+	}
 }
 
-func handleDelivery(w http.ResponseWriter, r *http.Request) {
-	s := getSession(w, r)
-	render(w, "page_delivery", PageData{Title: "Entregas", Shop: currentShop(r, s), CartCount: cartCount(s),
-		Data: deliveryData{Pending: store.PendingDeliveries()}})
-}
-
-func handleDeliveryAssign(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	store.AssignCourier(r.FormValue("order_id"), r.FormValue("courier"))
-	http.Redirect(w, r, "/admin/delivery", http.StatusSeeOther)
-}
-
-// Basic auth gate for everything under /admin -- minimal but real.
-// Set ADMIN_PASSWORD in Render's env vars.
-func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+func requirePOST(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		want := os.Getenv("ADMIN_PASSWORD")
-		if want == "" {
-			http.Error(w, "ADMIN_PASSWORD no configurado", http.StatusInternalServerError)
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		_, pass, ok := r.BasicAuth()
-		if !ok || pass != want {
-			w.Header().Set("WWW-Authenticate", `Basic realm="admin"`)
-			http.Error(w, "no autorizado", http.StatusUnauthorized)
+		r.ParseForm()
+		s := getSession(w, r)
+		if !validateCSRF(r, s) {
+			http.Error(w, "token CSRF inválido", http.StatusForbidden)
 			return
 		}
 		next(w, r)
 	}
 }
 
-func currentShop(_ *http.Request, s *Session) *Shop {
-	s.Mu.RLock()
-	shopID := s.ShopID
-	s.Mu.RUnlock()
-
+func currentShop(s *Session) *Shop {
+	shopID := s.shopID()
 	if shopID == "" {
 		return nil
 	}
@@ -218,13 +201,20 @@ func currentShop(_ *http.Request, s *Session) *Shop {
 }
 
 func cartCount(s *Session) int {
-	s.Mu.RLock()
-	defer s.Mu.RUnlock()
 	n := 0
-	for _, q := range s.Cart {
+	for _, q := range s.cartCopy() {
 		n += q
 	}
 	return n
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	if err := store.db.Ping(); err != nil {
+		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
 }
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
@@ -233,9 +223,22 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 
 func handleCatalog(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	render(w, "page_catalog", PageData{
-		Title: "Buscar repuestos", Shop: currentShop(r, s), CartCount: cartCount(s),
+	render(w, r, "page_catalog", PageData{
+		Title: "Buscar repuestos", Shop: currentShop(s), CartCount: cartCount(s),
 		Data: catalogData{Makes: store.Makes()},
+	})
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	var parts []Part
+	if q != "" {
+		parts = store.SearchParts(q)
+	}
+	render(w, r, "page_search", PageData{
+		Title: "Buscar", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: searchData{Query: q, Parts: parts},
 	})
 }
 
@@ -257,45 +260,34 @@ func handlePartialParts(w http.ResponseWriter, r *http.Request) {
 	tmpl.ExecuteTemplate(w, "partial_parts", store.PartsFor(make, model, year))
 }
 
+func handlePartialSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	tmpl.ExecuteTemplate(w, "partial_parts", store.SearchParts(q))
+}
+
 func handleCartAdd(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	r.ParseForm()
 	partID := r.FormValue("part_id")
-	if _, ok := store.Part(partID); ok {
-		s.Mu.Lock()
-		s.Cart[partID]++
-		s.Mu.Unlock()
+	if p, ok := store.Part(partID); ok {
+		if isInStock(p.Availability) && p.Stock <= 0 {
+			http.Error(w, "sin stock", http.StatusBadRequest)
+			return
+		}
+		s.addToCart(partID)
 	}
 	tmpl.ExecuteTemplate(w, "cart_badge", cartCount(s))
 }
 
 func handleCartUpdate(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	r.ParseForm()
 	partID := r.FormValue("part_id")
 	qty, _ := strconv.Atoi(r.FormValue("qty"))
-
-	// Add Lock here!
-	s.Mu.Lock()
-	if qty <= 0 {
-		delete(s.Cart, partID)
-	} else {
-		s.Cart[partID] = qty
-	}
-	s.Mu.Unlock()
-	// Unlock before redirecting
-
+	s.updateCart(partID, qty)
 	http.Redirect(w, r, "/carrito", http.StatusSeeOther)
 }
 
 func buildCartData(s *Session, sh *Shop) cartData {
-	s.Mu.RLock()
-	cartCopy := make(map[string]int, len(s.Cart))
-	for k, v := range s.Cart {
-		cartCopy[k] = v
-	}
-	s.Mu.RUnlock()
-
+	cartCopy := s.cartCopy()
 	var items []CartLine
 	var total float64
 	for pid, qty := range cartCopy {
@@ -316,8 +308,8 @@ func buildCartData(s *Session, sh *Shop) cartData {
 
 func handleCartPage(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	sh := currentShop(r, s)
-	render(w, "page_cart", PageData{
+	sh := currentShop(s)
+	render(w, r, "page_cart", PageData{
 		Title: "Carrito", Shop: sh, CartCount: cartCount(s),
 		Data: buildCartData(s, sh),
 	})
@@ -325,23 +317,17 @@ func handleCartPage(w http.ResponseWriter, r *http.Request) {
 
 func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	sh := currentShop(r, s)
-	r.ParseForm()
+	sh := currentShop(s)
 	payment := r.FormValue("payment")
 
 	var items []OrderItem
-
-	// Add the read lock here!
-	s.Mu.RLock()
-	for pid, qty := range s.Cart {
+	for pid, qty := range s.cartCopy() {
 		p, ok := store.Part(pid)
 		if !ok {
 			continue
 		}
 		items = append(items, OrderItem{PartID: p.ID, PartName: p.Name, Qty: qty, UnitUSD: p.PriceUSD})
 	}
-	s.Mu.RUnlock()
-
 	if len(items) == 0 {
 		http.Redirect(w, r, "/catalogo", http.StatusSeeOther)
 		return
@@ -357,21 +343,21 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 	order, err := store.PlaceOrder(shopID, items, onCredit)
 	if err != nil {
 		cd := buildCartData(s, sh)
-		render(w, "page_cart", PageData{Title: "Carrito", Shop: sh, CartCount: cartCount(s), Error: err.Error(), Data: cd})
+		render(w, r, "page_cart", PageData{
+			Title: "Carrito", Shop: sh, CartCount: cartCount(s),
+			Error: err.Error(), Data: cd,
+		})
 		return
 	}
 
-	// Clear the cart after placing the order
-	s.Mu.Lock()
-	s.Cart = map[string]int{}
-	s.Mu.Unlock()
+	s.clearCart()
 
 	if sh != nil {
 		msg := "Hola " + sh.Owner + ", tu pedido " + order.ID + " por $" + strconv.FormatFloat(order.Total, 'f', 2, 64) + " fue confirmado. Estado: " + string(order.Status) + "."
 		SendWhatsApp(sh.Phone, msg)
 	}
 
-	render(w, "page_confirmation", PageData{
+	render(w, r, "page_confirmation", PageData{
 		Title: "Pedido confirmado", Shop: sh, CartCount: 0,
 		Data: confirmData{Order: order},
 	})
@@ -379,69 +365,95 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 
 func handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	shops := store.AllShops()
-	render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Data: loginData{Shops: shops}})
+	render(w, r, "page_login", PageData{
+		Title: "Entrar", CartCount: cartCount(s),
+		Data: loginData{Shops: store.AllShops()},
+	})
 }
 
 func handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	r.ParseForm()
-
 	name := r.FormValue("name")
 	pass := r.FormValue("password")
-	sh, ok := store.ShopByLogin(name, pass)
 
+	sh, ok := store.ShopByName(name)
 	shops := store.AllShops()
 	if !ok {
-		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops}})
+		render(w, r, "page_login", PageData{
+			Title: "Entrar", CartCount: cartCount(s),
+			Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops},
+		})
+		return
+	}
+	if !checkPassword(sh.PasswordDemo, pass) {
+		render(w, r, "page_login", PageData{
+			Title: "Entrar", CartCount: cartCount(s),
+			Error: "Usuario o contraseña incorrectos.", Data: loginData{Shops: shops},
+		})
 		return
 	}
 
-	// Check if the shop is approved!
+	if len(sh.PasswordDemo) >= 4 && sh.PasswordDemo[:4] != "$2a$" {
+		if hashed, err := hashPassword(pass); err == nil {
+			store.UpgradePasswordHash(sh.ID, hashed)
+		}
+	}
+
 	if !sh.Approved {
-		render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "Tu cuenta está pendiente de revisión. No puedes entrar todavía.", Data: loginData{Shops: shops}})
+		render(w, r, "page_login", PageData{
+			Title: "Entrar", CartCount: cartCount(s),
+			Error: "Tu cuenta está pendiente de revisión.", Data: loginData{Shops: shops},
+		})
 		return
 	}
 
-	s.Mu.Lock()
-	s.ShopID = sh.ID
-	s.Mu.Unlock()
-
+	s.setShopID(sh.ID)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-
-	s.Mu.Lock()
-	s.ShopID = ""
-	s.Mu.Unlock()
-
+	s.clearShopID()
 	http.Redirect(w, r, "/catalogo", http.StatusSeeOther)
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	sh := currentShop(r, s)
-
+	sh := currentShop(s)
 	if sh == nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-
-	orders := store.OrdersFor(sh.ID)
-	render(w, "page_dashboard", PageData{
+	render(w, r, "page_dashboard", PageData{
 		Title: "Panel", Shop: sh, CartCount: cartCount(s),
-		Data: dashboardData{Orders: orders, CreditAvailable: sh.CreditLimit - sh.CreditUsed},
+		Data: dashboardData{Orders: store.OrdersFor(sh.ID), CreditAvailable: sh.CreditLimit - sh.CreditUsed},
+	})
+}
+
+func handleOrderDetail(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	sh := currentShop(s)
+	orderID := r.PathValue("id")
+	order, err := store.Order(orderID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if sh == nil || order.ShopID != sh.ID {
+		http.Error(w, "no autorizado", http.StatusForbidden)
+		return
+	}
+	render(w, r, "page_order_detail", PageData{
+		Title: "Pedido " + orderID, Shop: sh, CartCount: cartCount(s),
+		Data: orderDetailData{Order: order, ShopName: sh.Name, ShopPhone: sh.Phone},
 	})
 }
 
 func handleAdmin(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	sh := currentShop(r, s)
 	var rows []AgingRow
 	now := time.Now()
-	for _, o := range store.AllOrdersSortedByDue() {
+	for _, o := range store.CreditOrdersForAging() {
 		shx, _ := store.Shop(o.ShopID)
 		name := o.ShopID
 		if shx != nil {
@@ -454,116 +466,223 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, AgingRow{Order: o, ShopName: name, Overdue: overdue, DaysOverdue: days})
 	}
-	render(w, "page_admin", PageData{
-		Title: "Administración", Shop: sh, CartCount: cartCount(s),
-		Data: adminData{Rows: rows},
+	render(w, r, "page_admin", PageData{
+		Title: "Administración", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: adminData{Rows: rows, Summary: store.ReportSummary(), LowStock: store.LowStockParts()},
 	})
+}
+
+func handleAdminReports(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	orders := store.AllOrdersSortedByDue()
+	recent := orders
+	if len(recent) > 10 {
+		recent = recent[:10]
+	}
+	render(w, r, "page_reports", PageData{
+		Title: "Reportes", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: reportsData{Summary: store.ReportSummary(), LowStock: store.LowStockParts(), RecentOrders: recent},
+	})
+}
+
+func handleInventory(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	low := store.LowStockParts()
+	render(w, r, "page_inventory", PageData{
+		Title: "Inventario", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: inventoryData{StockRows: store.StockReport(), LowStock: low},
+	})
+}
+
+func handleDelivery(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	render(w, r, "page_delivery", PageData{
+		Title: "Entregas", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: deliveryData{Pending: store.PendingDeliveries()},
+	})
+}
+
+func handleDeliveryAssign(w http.ResponseWriter, r *http.Request) {
+	store.AssignCourier(r.FormValue("order_id"), r.FormValue("courier"))
+	http.Redirect(w, r, "/admin/delivery", http.StatusSeeOther)
 }
 
 func handleInventoryAddGet(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	render(w, "page_inventory_add", PageData{
-		Title:     "Agregar Repuesto",
-		Shop:      currentShop(r, s),
-		CartCount: cartCount(s),
+	render(w, r, "page_inventory_add", PageData{
+		Title: "Agregar Repuesto", Shop: currentShop(s), CartCount: cartCount(s),
 	})
 }
 
 func handleInventoryAddPost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-
 	makeStr := r.FormValue("make")
 	model := r.FormValue("model")
 	category := r.FormValue("category")
 	name := r.FormValue("name")
 	source := r.FormValue("source")
-	availability := r.FormValue("availability") // NEW
-
+	availability := r.FormValue("availability")
 	year, _ := strconv.Atoi(r.FormValue("year"))
 	stock, _ := strconv.Atoi(r.FormValue("stock"))
 	reorder, _ := strconv.Atoi(r.FormValue("reorder_point"))
 	price, _ := strconv.ParseFloat(r.FormValue("price_usd"), 64)
 
+	if err := validatePartInput(makeStr, model, category, name, source, year, stock, reorder, price, availability); err != nil {
+		s := getSession(w, r)
+		render(w, r, "page_inventory_add", PageData{
+			Title: "Agregar Repuesto", Shop: currentShop(s), CartCount: cartCount(s), Error: err.Error(),
+		})
+		return
+	}
 	store.AddPart(makeStr, model, category, name, source, year, stock, reorder, price, availability)
 	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
 }
 
 func handleSignupGet(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s)})
+	render(w, r, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s)})
 }
 
 func handleSignupPost(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	r.ParseForm()
 	name := strings.TrimSpace(r.FormValue("name"))
 	owner := strings.TrimSpace(r.FormValue("owner"))
 	phone := strings.TrimSpace(r.FormValue("phone"))
-	address := strings.TrimSpace(r.FormValue("address")) // NEW
+	address := strings.TrimSpace(r.FormValue("address"))
 	password := r.FormValue("password")
 
-	if name == "" || owner == "" || phone == "" || address == "" || password == "" {
-		render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Completa todos los campos."})
+	if err := validateSignup(name, owner, phone, address, password); err != nil {
+		render(w, r, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: err.Error()})
 		return
 	}
 	if store.ShopNameTaken(name) {
-		render(w, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Ya existe un taller con ese nombre."})
+		render(w, r, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Ya existe un taller con ese nombre."})
 		return
 	}
-
-	store.AddShop(name, owner, phone, address, password)
-
-	shops := store.AllShops()
-	render(w, "page_login", PageData{Title: "Entrar", CartCount: cartCount(s), Error: "¡Cuenta creada! Espera a que un administrador la apruebe.", Data: loginData{Shops: shops}})
+	if _, err := store.AddShop(name, owner, phone, address, password); err != nil {
+		render(w, r, "page_signup", PageData{Title: "Crear cuenta", CartCount: cartCount(s), Error: "Error al crear cuenta."})
+		return
+	}
+	render(w, r, "page_login", PageData{
+		Title: "Entrar", CartCount: cartCount(s),
+		Error: "¡Cuenta creada! Espera a que un administrador la apruebe.",
+		Data:  loginData{Shops: store.AllShops()},
+	})
 }
 
 func handleAdminShops(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	render(w, "page_admin_shops", PageData{
-		Title:     "Aprobar Talleres",
-		Shop:      currentShop(r, s),
-		CartCount: cartCount(s),
-		Data:      pendingData{Shops: store.PendingShops()},
+	render(w, r, "page_admin_shops", PageData{
+		Title: "Talleres", Shop: currentShop(s), CartCount: cartCount(s),
+		Data: pendingData{Pending: store.PendingShops(), Clients: store.ActiveClients()},
 	})
 }
 
 func handleAdminShopApprove(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
 	store.ApproveShop(r.FormValue("shop_id"))
 	http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
 }
 
+func handleAdminShopRemove(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	shopID := r.FormValue("shop_id")
+	if err := store.RemoveShop(shopID); err != nil {
+		render(w, r, "page_admin_shops", PageData{
+			Title: "Talleres", Shop: currentShop(s), CartCount: cartCount(s),
+			Error: err.Error(),
+			Data:  pendingData{Pending: store.PendingShops(), Clients: store.ActiveClients()},
+		})
+		return
+	}
+	http.Redirect(w, r, "/admin/shops", http.StatusSeeOther)
+}
+
+func handleDriverDeliver(w http.ResponseWriter, r *http.Request) {
+	orderID := r.FormValue("order_id")
+	order, err := store.Order(orderID)
+	if err != nil || order.Status != StatusListo {
+		http.Redirect(w, r, "/driver", http.StatusSeeOther)
+		return
+	}
+	if _, err := store.UpdateOrderStatus(orderID, StatusLlegado); err != nil {
+		logError("driver deliver failed", err.Error())
+	}
+	if order.ShopID != "" {
+		if sh, ok := store.Shop(order.ShopID); ok {
+			SendWhatsApp(sh.Phone, "Tu pedido "+orderID+" fue entregado. ¡Gracias!")
+		}
+	}
+	http.Redirect(w, r, "/driver", http.StatusSeeOther)
+}
+
 func handleAdminOrders(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
-	render(w, "page_admin_orders", PageData{
-		Title: "Gestión de Pedidos", Shop: currentShop(r, s), CartCount: cartCount(s),
+	render(w, r, "page_admin_orders", PageData{
+		Title: "Gestión de Pedidos", Shop: currentShop(s), CartCount: cartCount(s),
 		Data: orderManageData{Orders: store.AllOrdersSortedByDue()},
 	})
 }
 
+func handleAdminOrderDetail(w http.ResponseWriter, r *http.Request) {
+	s := getSession(w, r)
+	orderID := r.PathValue("id")
+	order, err := store.Order(orderID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	shopName := order.ShopID
+	shopPhone := ""
+	if sh, ok := store.Shop(order.ShopID); ok {
+		shopName = sh.Name
+		shopPhone = sh.Phone
+	}
+	render(w, r, "page_admin_order_detail", PageData{
+		Title: "Pedido " + orderID, Shop: currentShop(s), CartCount: cartCount(s),
+		Data: orderDetailData{Order: order, ShopName: shopName, ShopPhone: shopPhone},
+	})
+}
+
 func handleAdminOrderStatus(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
 	orderID := r.FormValue("order_id")
 	newStatus := OrderStatus(r.FormValue("status"))
+	order, err := store.UpdateOrderStatus(orderID, newStatus)
+	if err != nil {
+		logError("order status update failed", err.Error())
+		http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
+		return
+	}
 
-	store.UpdateOrderStatus(orderID, newStatus)
-
-	// Send message to driver when order is ready
 	if newStatus == StatusListo {
-		driverPhone := os.Getenv("DRIVER_PHONE")
-		if driverPhone != "" {
-			SendWhatsApp(driverPhone, "📦 Nuevo pedido listo para recoger en almacén: "+orderID)
+		if driverPhone := os.Getenv("DRIVER_PHONE"); driverPhone != "" {
+			SendWhatsApp(driverPhone, "📦 Nuevo pedido listo para recoger: "+orderID)
 		}
 	}
 
-	http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
+	if order != nil && order.ShopID != "" {
+		if sh, ok := store.Shop(order.ShopID); ok {
+			msg := "Actualización pedido " + orderID + ": ahora está en estado \"" + string(newStatus) + "\"."
+			SendWhatsApp(sh.Phone, msg)
+		}
+	}
+
+	redirect := r.FormValue("redirect")
+	if redirect == "" {
+		redirect = "/admin/orders"
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func handleAdminOrderPay(w http.ResponseWriter, r *http.Request) {
+	orderID := r.FormValue("order_id")
+	if err := store.MarkOrderPaid(orderID); err != nil {
+		logError("mark paid failed", err.Error())
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 func handleAdminInventoryDelete(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	err := store.DeletePart(r.FormValue("part_id"))
-	if err != nil {
-		log.Println("Error deleting part (might be in an order):", err)
+	if err := store.DeletePart(r.FormValue("part_id")); err != nil {
+		logError("delete part failed", err.Error())
 	}
 	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
 }
@@ -571,83 +690,85 @@ func handleAdminInventoryDelete(w http.ResponseWriter, r *http.Request) {
 func handleDriverDashboard(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	var routes []DriverRoute
-
-	// Mostrar todos los pedidos que no han sido entregados ("Llegado" / "Listo")
-	for _, o := range store.AllOrdersSortedByDue() {
-		if o.Status != StatusLlegado && o.Status != StatusListo {
-			sh, _ := store.Shop(o.ShopID)
-			routes = append(routes, DriverRoute{Order: o, Shop: sh})
+	for _, o := range store.DriverReadyOrders() {
+		sh, ok := store.Shop(o.ShopID)
+		if !ok {
+			continue
 		}
+		routes = append(routes, DriverRoute{Order: o, Shop: sh})
 	}
-
-	render(w, "page_driver", PageData{
-		Title: "Ruta de Repartidor", Shop: currentShop(r, s), CartCount: cartCount(s),
+	render(w, r, "page_driver", PageData{
+		Title: "Ruta de Repartidor", Shop: currentShop(s), CartCount: cartCount(s),
 		Data: driverData{Routes: routes},
 	})
 }
-
-// ---------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------
 
 func main() {
 	loadTemplates()
 
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
-		log.Fatal("DATABASE_URL environment variable is required")
+		logError("startup failed", "DATABASE_URL required")
+		os.Exit(1)
 	}
 
 	var err error
 	store, err = NewPostgresStore(connStr)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		logError("db init failed", err.Error())
+		os.Exit(1)
 	}
+	store.CleanExpiredSessions()
 
 	mux := http.NewServeMux()
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /{$}", handleHome)
 	mux.HandleFunc("GET /catalogo", handleCatalog)
+	mux.HandleFunc("GET /buscar", handleSearch)
 	mux.HandleFunc("GET /partials/models", handlePartialModels)
 	mux.HandleFunc("GET /partials/years", handlePartialYears)
 	mux.HandleFunc("GET /partials/parts", handlePartialParts)
-	mux.HandleFunc("POST /cart/add", handleCartAdd)
-	mux.HandleFunc("POST /cart/update", handleCartUpdate)
+	mux.HandleFunc("GET /partials/search", handlePartialSearch)
+	mux.HandleFunc("POST /cart/add", requirePOST(handleCartAdd))
+	mux.HandleFunc("POST /cart/update", requirePOST(handleCartUpdate))
 	mux.HandleFunc("GET /carrito", handleCartPage)
-	mux.HandleFunc("POST /order/place", handleOrderPlace)
+	mux.HandleFunc("POST /order/place", requirePOST(handleOrderPlace))
 	mux.HandleFunc("GET /login", handleLoginGet)
-	mux.HandleFunc("POST /login", handleLoginPost)
+	mux.HandleFunc("POST /login", requirePOST(handleLoginPost))
 	mux.HandleFunc("GET /logout", handleLogout)
 	mux.HandleFunc("GET /dashboard", handleDashboard)
+	mux.HandleFunc("GET /pedido/{id}", handleOrderDetail)
 	mux.HandleFunc("GET /signup", handleSignupGet)
-	mux.HandleFunc("POST /signup", handleSignupPost)
+	mux.HandleFunc("POST /signup", requirePOST(handleSignupPost))
 
-	// Admin routes protected by BasicAuth middleware
 	mux.HandleFunc("GET /admin", requireAdmin(handleAdmin))
+	mux.HandleFunc("GET /admin/reports", requireAdmin(handleAdminReports))
 	mux.HandleFunc("GET /admin/inventory", requireAdmin(handleInventory))
 	mux.HandleFunc("GET /admin/delivery", requireAdmin(handleDelivery))
-	mux.HandleFunc("POST /admin/delivery/assign", requireAdmin(handleDeliveryAssign))
-
-	// page_inventory_add
+	mux.HandleFunc("POST /admin/delivery/assign", requireAdmin(requirePOST(handleDeliveryAssign)))
 	mux.HandleFunc("GET /admin/inventory/add", requireAdmin(handleInventoryAddGet))
-	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(handleInventoryAddPost))
-	port := os.Getenv("PORT")
-
-	// Signup
+	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(requirePOST(handleInventoryAddPost)))
 	mux.HandleFunc("GET /admin/shops", requireAdmin(handleAdminShops))
-	mux.HandleFunc("POST /admin/shops/approve", requireAdmin(handleAdminShopApprove))
-
-	// Delivery
+	mux.HandleFunc("POST /admin/shops/approve", requireAdmin(requirePOST(handleAdminShopApprove)))
+	mux.HandleFunc("POST /admin/shops/remove", requireAdmin(requirePOST(handleAdminShopRemove)))
 	mux.HandleFunc("GET /admin/orders", requireAdmin(handleAdminOrders))
-	mux.HandleFunc("POST /admin/orders/status", requireAdmin(handleAdminOrderStatus))
-	mux.HandleFunc("POST /admin/inventory/delete", requireAdmin(handleAdminInventoryDelete))
+	mux.HandleFunc("GET /admin/orders/{id}", requireAdmin(handleAdminOrderDetail))
+	mux.HandleFunc("POST /admin/orders/status", requireAdmin(requirePOST(handleAdminOrderStatus)))
+	mux.HandleFunc("POST /admin/orders/pay", requireAdmin(requirePOST(handleAdminOrderPay)))
+	mux.HandleFunc("POST /admin/inventory/delete", requireAdmin(requirePOST(handleAdminInventoryDelete)))
+	mux.HandleFunc("GET /driver", requireDriver(handleDriverDashboard))
+	mux.HandleFunc("POST /driver/deliver", requireDriver(requirePOST(handleDriverDeliver)))
 
-	// Ruta para el conductor (Protegida por admin para este demo)
-	mux.HandleFunc("GET /driver", requireAdmin(handleDriverDashboard))
+	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
 	addr := ":" + port
-	log.Printf("RepuestosDirect escuchando en %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	logInfo("RepuestosDirect listening", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		logError("server error", err.Error())
+		os.Exit(1)
+	}
 }
