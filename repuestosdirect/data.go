@@ -471,9 +471,25 @@ func (s *Store) PartsFor(make, model string, year int) []Part {
 
 func (s *Store) Part(id string) (Part, bool) {
 	var p Part
-	err := s.db.QueryRow(`SELECT id, make, model, year, category, name, source, price_usd, stock, availability FROM parts WHERE id = $1`, id).
-		Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability)
+	err := s.db.QueryRow(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability FROM parts WHERE id = $1`, id).
+		Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint, &p.Availability)
 	return p, err == nil
+}
+
+func (s *Store) UpdatePart(id, makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability string) error {
+	res, err := s.db.Exec(`
+		UPDATE parts SET make=$2, model=$3, year=$4, category=$5, name=$6, source=$7,
+			price_usd=$8, stock=$9, reorder_point=$10, availability=$11
+		WHERE id=$1`,
+		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("repuesto no encontrado")
+	}
+	return nil
 }
 
 // --- Shops ---

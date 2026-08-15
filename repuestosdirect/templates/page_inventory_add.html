@@ -3,22 +3,35 @@
 
 <div class="max-w-2xl mx-auto bg-white p-6 rounded-lg border border-stone-200 mt-6">
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-xl font-bold text-[#1B2A4A]">Agregar nuevo repuesto</h1>
+        <div>
+            {{if .IsEdit}}
+            <h1 class="text-xl font-bold text-[#1B2A4A]">Editar repuesto</h1>
+            <p class="text-sm text-stone-500">ID: {{.Part.ID}} — actualiza stock, precio u otros datos.</p>
+            {{else if .Part.Name}}
+            <h1 class="text-xl font-bold text-[#1B2A4A]">Agregar repuesto (copiado)</h1>
+            <p class="text-sm text-stone-500">Basado en otro repuesto — se creará uno nuevo al guardar.</p>
+            {{else}}
+            <h1 class="text-xl font-bold text-[#1B2A4A]">Agregar nuevo repuesto</h1>
+            {{end}}
+        </div>
         <a href="/admin/inventory" class="text-sm text-blue-600 hover:underline">Volver al inventario</a>
     </div>
 
-    <form action="/admin/inventory/add" method="POST" class="space-y-4">
+    {{if .Error}}
+    <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>
+    {{end}}
+
+    <form action="{{if .IsEdit}}/admin/inventory/edit/{{.Part.ID}}{{else}}/admin/inventory/add{{end}}" method="POST" class="space-y-4">
         {{template "csrf" .}}
-        {{if .Error}}<div class="text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>{{end}}
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-stone-700">Marca del Vehículo</label>
-                <input type="text" name="make" required
+                <input type="text" name="make" required value="{{.Part.Make}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="Ej: Toyota">
             </div>
             <div>
                 <label class="block text-sm font-medium text-stone-700">Modelo</label>
-                <input type="text" name="model" required
+                <input type="text" name="model" required value="{{.Part.Model}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="Ej: Corolla">
             </div>
         </div>
@@ -26,12 +39,12 @@
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-stone-700">Año</label>
-                <input type="number" name="year" required
+                <input type="number" name="year" required value="{{.Part.Year}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm" placeholder="2015">
             </div>
             <div>
                 <label class="block text-sm font-medium text-stone-700">Categoría</label>
-                <input type="text" name="category" required
+                <input type="text" name="category" required value="{{.Part.Category}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
                     placeholder="Ej: Frenos, Motor...">
             </div>
@@ -39,14 +52,14 @@
 
         <div>
             <label class="block text-sm font-medium text-stone-700">Nombre de la pieza</label>
-            <input type="text" name="name" required
+            <input type="text" name="name" required value="{{.Part.Name}}"
                 class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
                 placeholder="Ej: Pastillas de freno delanteras">
         </div>
 
         <div>
             <label class="block text-sm font-medium text-stone-700">Origen / Marca de pieza</label>
-            <input type="text" name="source" required
+            <input type="text" name="source" required value="{{.Part.Source}}"
                 class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm"
                 placeholder="Ej: OEM Japan, Aftermarket">
         </div>
@@ -55,16 +68,18 @@
             <div>
                 <label class="block text-sm font-medium text-stone-700">Precio (USD)</label>
                 <input type="number" step="0.01" name="price_usd" required
+                    value="{{if .Part.PriceUSD}}{{printf "%.2f" .Part.PriceUSD}}{{end}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
             </div>
             <div>
-                <label class="block text-sm font-medium text-stone-700">Stock Inicial</label>
-                <input type="number" name="stock" required
+                <label class="block text-sm font-medium text-stone-700">{{if .IsEdit}}Stock{{else}}Stock Inicial{{end}}</label>
+                <input type="number" name="stock" required value="{{.Part.Stock}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
             </div>
             <div>
                 <label class="block text-sm font-medium text-stone-700">Punto de reorden</label>
-                <input type="number" name="reorder_point" value="5" required
+                <input type="number" name="reorder_point" required
+                    value="{{if .Part.ReorderPoint}}{{.Part.ReorderPoint}}{{else}}5{{end}}"
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
             </div>
         </div>
@@ -72,15 +87,16 @@
             <label class="block text-sm font-medium text-stone-700">Disponibilidad</label>
             <select name="availability"
                 class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm bg-white">
-                <option value="En stock">En stock</option>
-                <option value="Por pedido — 3 a 4 semanas">Por pedido — 3 a 4 semanas</option>
+                <option value="En stock" {{if eq .Part.Availability "En stock"}}selected{{end}}>En stock</option>
+                <option value="Por pedido — 3 a 4 semanas" {{if eq .Part.Availability "Por pedido — 3 a 4 semanas"}}selected{{end}}>Por pedido — 3 a 4 semanas</option>
             </select>
         </div>
 
         <div class="pt-4">
             <button type="submit"
-                class="w-full bg-[#1B2A4A] text-white py-2 px-4 rounded hover:bg-blue-800 transition">Guardar
-                Repuesto</button>
+                class="w-full bg-[#1B2A4A] text-white py-2 px-4 rounded hover:bg-blue-800 transition">
+                {{if .IsEdit}}Guardar cambios{{else}}Guardar repuesto{{end}}
+            </button>
         </div>
     </form>
 </div>

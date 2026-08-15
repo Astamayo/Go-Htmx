@@ -39,6 +39,10 @@ type PageData struct {
 }
 
 type inventoryData struct{ StockRows, LowStock []StockRow }
+type partFormData struct {
+	Part   Part
+	IsEdit bool
+}
 type deliveryData struct{ Pending []*Order }
 type pendingData struct{ Pending, Clients []*Shop }
 type orderManageData struct{ Orders []*Order }
@@ -119,6 +123,8 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		Parts           []Part
 		Summary         ReportSummary
 		RecentOrders    []*Order
+		Part            Part
+		IsEdit          bool
 	}
 	c := ctx{
 		Title: pd.Title, Shop: pd.Shop, CartCount: pd.CartCount,
@@ -166,6 +172,9 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		c.Summary = d.Summary
 		c.LowStock = d.LowStock
 		c.RecentOrders = d.RecentOrders
+	case partFormData:
+		c.Part = d.Part
+		c.IsEdit = d.IsEdit
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
@@ -497,33 +506,76 @@ func handleDeliveryAssign(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/delivery", http.StatusSeeOther)
 }
 
-func handleInventoryAddGet(w http.ResponseWriter, r *http.Request) {
+func parsePartForm(r *http.Request) (makeStr, model, category, name, source, availability string, year, stock, reorder int, price float64) {
+	makeStr = r.FormValue("make")
+	model = r.FormValue("model")
+	category = r.FormValue("category")
+	name = r.FormValue("name")
+	source = r.FormValue("source")
+	availability = r.FormValue("availability")
+	year, _ = strconv.Atoi(r.FormValue("year"))
+	stock, _ = strconv.Atoi(r.FormValue("stock"))
+	reorder, _ = strconv.Atoi(r.FormValue("reorder_point"))
+	price, _ = strconv.ParseFloat(r.FormValue("price_usd"), 64)
+	return
+}
+
+func renderPartForm(w http.ResponseWriter, r *http.Request, title string, part Part, isEdit bool, errMsg string) {
 	s := getSession(w, r)
 	render(w, r, "page_inventory_add", PageData{
-		Title: "Agregar Repuesto", Shop: currentShop(s), CartCount: cartCount(s),
+		Title: title, Shop: currentShop(s), CartCount: cartCount(s),
+		Error: errMsg, Data: partFormData{Part: part, IsEdit: isEdit},
 	})
 }
 
-func handleInventoryAddPost(w http.ResponseWriter, r *http.Request) {
-	makeStr := r.FormValue("make")
-	model := r.FormValue("model")
-	category := r.FormValue("category")
-	name := r.FormValue("name")
-	source := r.FormValue("source")
-	availability := r.FormValue("availability")
-	year, _ := strconv.Atoi(r.FormValue("year"))
-	stock, _ := strconv.Atoi(r.FormValue("stock"))
-	reorder, _ := strconv.Atoi(r.FormValue("reorder_point"))
-	price, _ := strconv.ParseFloat(r.FormValue("price_usd"), 64)
+func handleInventoryAddGet(w http.ResponseWriter, r *http.Request) {
+	part := Part{}
+	if from := strings.TrimSpace(r.URL.Query().Get("from")); from != "" {
+		if p, ok := store.Part(from); ok {
+			part = p
+		}
+	}
+	renderPartForm(w, r, "Agregar Repuesto", part, false, "")
+}
 
+func handleInventoryAddPost(w http.ResponseWriter, r *http.Request) {
+	makeStr, model, category, name, source, availability, year, stock, reorder, price := parsePartForm(r)
 	if err := validatePartInput(makeStr, model, category, name, source, year, stock, reorder, price, availability); err != nil {
-		s := getSession(w, r)
-		render(w, r, "page_inventory_add", PageData{
-			Title: "Agregar Repuesto", Shop: currentShop(s), CartCount: cartCount(s), Error: err.Error(),
-		})
+		renderPartForm(w, r, "Agregar Repuesto", Part{
+			Make: makeStr, Model: model, Year: year, Category: category, Name: name,
+			Source: source, PriceUSD: price, Stock: stock, ReorderPoint: reorder, Availability: availability,
+		}, false, err.Error())
 		return
 	}
 	store.AddPart(makeStr, model, category, name, source, year, stock, reorder, price, availability)
+	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
+}
+
+func handleInventoryEditGet(w http.ResponseWriter, r *http.Request) {
+	partID := r.PathValue("id")
+	p, ok := store.Part(partID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	renderPartForm(w, r, "Editar Repuesto "+partID, p, true, "")
+}
+
+func handleInventoryEditPost(w http.ResponseWriter, r *http.Request) {
+	partID := r.PathValue("id")
+	makeStr, model, category, name, source, availability, year, stock, reorder, price := parsePartForm(r)
+	part := Part{
+		ID: partID, Make: makeStr, Model: model, Year: year, Category: category, Name: name,
+		Source: source, PriceUSD: price, Stock: stock, ReorderPoint: reorder, Availability: availability,
+	}
+	if err := validatePartInput(makeStr, model, category, name, source, year, stock, reorder, price, availability); err != nil {
+		renderPartForm(w, r, "Editar Repuesto "+partID, part, true, err.Error())
+		return
+	}
+	if err := store.UpdatePart(partID, makeStr, model, category, name, source, year, stock, reorder, price, availability); err != nil {
+		renderPartForm(w, r, "Editar Repuesto "+partID, part, true, err.Error())
+		return
+	}
 	http.Redirect(w, r, "/admin/inventory", http.StatusSeeOther)
 }
 
@@ -796,6 +848,8 @@ func main() {
 	mux.HandleFunc("POST /admin/delivery/assign", requireAdmin(requirePOST(handleDeliveryAssign)))
 	mux.HandleFunc("GET /admin/inventory/add", requireAdmin(handleInventoryAddGet))
 	mux.HandleFunc("POST /admin/inventory/add", requireAdmin(requirePOST(handleInventoryAddPost)))
+	mux.HandleFunc("GET /admin/inventory/edit/{id}", requireAdmin(handleInventoryEditGet))
+	mux.HandleFunc("POST /admin/inventory/edit/{id}", requireAdmin(requirePOST(handleInventoryEditPost)))
 	mux.HandleFunc("GET /admin/shops", requireAdmin(handleAdminShops))
 	mux.HandleFunc("POST /admin/shops/approve", requireAdmin(requirePOST(handleAdminShopApprove)))
 	mux.HandleFunc("POST /admin/shops/credit", requireAdmin(requirePOST(handleAdminShopCredit)))
