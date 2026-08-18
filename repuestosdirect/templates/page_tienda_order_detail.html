@@ -1,0 +1,31 @@
+{{define "order_timeline"}}
+{{if .History}}
+<div class="mt-4 border border-stone-200 rounded-lg p-4 bg-stone-50">
+  <h3 class="text-sm font-bold text-[#1B2A4A] mb-3">Historial de estado</h3>
+  <ol class="space-y-2 text-sm">
+    {{range .History}}
+    <li class="flex gap-3">
+      <span class="text-stone-400 text-xs whitespace-nowrap">{{.ChangedAt.Format "02/01 15:04"}}</span>
+      <span class="font-medium">{{.Status}}</span>
+      {{if .ChangedBy}}<span class="text-stone-400 text-xs">({{.ChangedBy}})</span>{{end}}
+    </li>
+    {{end}}
+  </ol>
+</div>
+{{end}}
+{{end}}
+
+{{define "page_tienda_order_detail"}}{{template "header" .}}
+<div class="mb-4"><a href="/tienda/pedidos" class="text-sm text-stone-500 hover:underline">← Pedidos</a></div>
+<div class="bg-white border border-stone-200 rounded-lg p-5">
+  <div class="flex justify-between items-start mb-4">
+    <h1 class="text-xl font-bold text-[#1B2A4A]">Pedido {{.Order.ID}}</h1>
+    <span class="text-xs font-semibold px-2 py-1 rounded {{statusBadgeClass .Order.Status}}">{{.Order.Status}}</span>
+  </div>
+  <p class="text-sm text-stone-500 mb-4">{{.Order.PlacedAt.Format "02 January 2006"}} · Total: <strong>${{printf "%.2f" .Order.Total}}</strong></p>
+  <ul class="divide-y divide-stone-100 text-sm mb-4">
+    {{range .Order.Items}}<li class="py-2 flex justify-between"><span>{{.Qty}}× {{.PartName}}</span><span>${{printf "%.2f" (lineTotal .Qty .UnitUSD)}}</span></li>{{end}}
+  </ul>
+  {{template "order_timeline" .}}
+</div>
+{{template "footer" .}}{{end}}

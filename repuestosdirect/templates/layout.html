@@ -20,17 +20,34 @@
 </head>
 <body class="bg-stone-100 text-stone-800 min-h-screen">
   <header class="bg-[#1B2A4A] text-white">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-2">
       <a href="/" class="font-bold text-lg tracking-tight">Repuestos<span class="text-[#C99A5B]">Direct</span></a>
-      <div class="flex items-center gap-4 text-sm">
-        <a href="/catalogo" class="hover:text-[#C99A5B]">Catálogo</a>
-        <a href="/buscar" class="hover:text-[#C99A5B]">Buscar</a>
-        {{template "cart_badge" .CartCount}}
-        {{if .Shop}}
-          <a href="/dashboard" class="hover:text-[#C99A5B]">{{.Shop.Name}}</a>
+      <div class="flex items-center gap-3 text-sm flex-wrap">
+        {{if eq .Role "admin"}}
+          <a href="/admin" class="hover:text-[#C99A5B]">Panel</a>
+          <a href="/admin/orders" class="hover:text-[#C99A5B]">Pedidos</a>
+          <a href="/admin/shops" class="hover:text-[#C99A5B]">Talleres</a>
+          <a href="/admin/drivers" class="hover:text-[#C99A5B]">Repartidores</a>
+          <a href="/admin/inventory" class="hover:text-[#C99A5B]">Inventario</a>
+          <a href="/admin/reports" class="hover:text-[#C99A5B]">Reportes</a>
+          <a href="/logout" class="text-stone-300 hover:text-white">Salir</a>
+        {{else if eq .Role "shop"}}
+          <a href="/tienda/pedidos" class="hover:text-[#C99A5B]">Pedidos</a>
+          <a href="/tienda/entregas" class="hover:text-[#C99A5B]">Entregas</a>
+          <a href="/tienda/inventario" class="hover:text-[#C99A5B]">Inventario</a>
+          <a href="/catalogo" class="hover:text-[#C99A5B]">Catálogo</a>
+          {{template "cart_badge" .CartCount}}
+          {{if .Shop}}<span class="text-stone-300">{{.Shop.Name}}</span>{{end}}
+          <a href="/logout" class="text-stone-300 hover:text-white">Salir</a>
+        {{else if eq .Role "driver"}}
+          <a href="/driver" class="hover:text-[#C99A5B]">Mis entregas</a>
           <a href="/logout" class="text-stone-300 hover:text-white">Salir</a>
         {{else}}
-          <a href="/login" class="hover:text-[#C99A5B]">Entrar</a>
+          <a href="/catalogo" class="hover:text-[#C99A5B]">Catálogo</a>
+          <a href="/buscar" class="hover:text-[#C99A5B]">Buscar</a>
+          {{template "cart_badge" .CartCount}}
+          <a href="/login" class="hover:text-[#C99A5B]">Taller</a>
+          <a href="/admin/login" class="text-stone-400 hover:text-[#C99A5B] text-xs">Admin</a>
         {{end}}
       </div>
     </div>

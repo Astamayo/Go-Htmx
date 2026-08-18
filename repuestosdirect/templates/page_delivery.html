@@ -3,10 +3,10 @@
 
 <div class="flex justify-between items-center mb-4">
     <div>
-        <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Asignar mensajería</h1>
-        <p class="text-sm text-stone-500">Pedidos listos para recoger que aún no tienen repartidor asignado.</p>
+        <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Asignar repartidor</h1>
+        <p class="text-sm text-stone-500">Pedidos listos para recoger sin repartidor asignado.</p>
     </div>
-    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md">Volver al Panel</a>
+    <a href="/admin" class="text-sm bg-stone-100 px-4 py-2 rounded-md">Panel</a>
 </div>
 
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
@@ -16,34 +16,27 @@
                 <th class="text-left px-4 py-2">Pedido</th>
                 <th class="text-left px-4 py-2">Fecha</th>
                 <th class="text-left px-4 py-2">Total</th>
-                <th class="text-left px-4 py-2">Asignar mensajero</th>
+                <th class="text-left px-4 py-2">Repartidor</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-stone-200">
             {{if not .Pending}}
-            <tr>
-                <td colspan="4" class="px-4 py-8 text-center text-stone-500">No hay entregas pendientes de asignación.</td>
-            </tr>
+            <tr><td colspan="4" class="px-4 py-8 text-center text-stone-500">No hay entregas pendientes.</td></tr>
             {{else}}
             {{range .Pending}}
             <tr class="hover:bg-stone-50">
-                <td class="px-4 py-3 font-medium">
-                    <a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a>
-                </td>
-                <td class="px-4 py-3">{{.PlacedAt.Format "02 Jan 2006"}}</td>
+                <td class="px-4 py-3 font-medium"><a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a></td>
+                <td class="px-4 py-3">{{.PlacedAt.Format "02/01/2006"}}</td>
                 <td class="px-4 py-3">${{printf "%.2f" .Total}}</td>
                 <td class="px-4 py-3">
                     <form action="/admin/delivery/assign" method="POST" class="flex gap-2 items-center">
                         {{template "csrf" $}}
                         <input type="hidden" name="order_id" value="{{.ID}}">
-                        <select name="courier" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white" required>
+                        <select name="driver_id" class="border rounded px-2 py-1 text-xs bg-white" required>
                             <option value="">Seleccionar…</option>
-                            <option value="Juan">Juan</option>
-                            <option value="Pedro">Pedro</option>
-                            <option value="Miguel">Miguel</option>
-                            <option value="Externo">Externo</option>
+                            {{range $.Drivers}}<option value="{{.ID}}">{{.Name}} ({{.Zone}})</option>{{end}}
                         </select>
-                        <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded text-xs hover:bg-blue-800">Asignar</button>
+                        <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded text-xs">Asignar</button>
                     </form>
                 </td>
             </tr>
@@ -52,6 +45,4 @@
         </tbody>
     </table>
 </div>
-
-{{template "footer" .}}
-{{end}}
+{{template "footer" .}}{{end}}

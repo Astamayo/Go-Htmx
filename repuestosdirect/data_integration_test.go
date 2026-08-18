@@ -25,7 +25,7 @@ func TestStorePlaceOrderAndRemoveShop(t *testing.T) {
 	if err := store.ApproveShop(sh.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AddPart("Toyota", "Test", "Motor", "Filtro IT", "OEM", 2020, 10, 2, 5.0, "En stock"); err != nil {
+	if err := store.AddPart("Toyota", "Test", "Motor", "Filtro IT", "OEM", 2020, 10, 2, 5.0, "En stock", "", "", "new", "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	parts := store.SearchParts("Filtro IT")
@@ -35,7 +35,7 @@ func TestStorePlaceOrderAndRemoveShop(t *testing.T) {
 
 	order, err := store.PlaceOrder(sh.ID, []OrderItem{{
 		PartID: parts[0].ID, PartName: parts[0].Name, Qty: 2, UnitUSD: parts[0].PriceUSD,
-	}}, true)
+	}}, false)
 	if err != nil {
 		t.Fatalf("place order: %v", err)
 	}

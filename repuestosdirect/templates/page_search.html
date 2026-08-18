@@ -3,25 +3,23 @@
 
 <div class="bg-white border border-stone-200 rounded-lg p-5 shadow-sm">
     <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Buscar repuestos</h1>
-    <p class="text-sm text-stone-500 mb-4">Busca por nombre, categoría, marca, modelo o ID de pieza.</p>
+    <p class="text-sm text-stone-500 mb-4">Busca por nombre, número de parte, OEM, marca, modelo o ID.</p>
 
-    <form method="GET" action="/buscar" class="flex gap-2 mb-6">
-        <input type="search" name="q" value="{{.Query}}" placeholder="Ej: pastillas de freno"
+    <form method="GET" action="/buscar" class="flex gap-2 mb-4">
+        <input type="search" name="q" value="{{.Query}}" placeholder="Ej: 04465-02220 o pastillas de freno"
             class="flex-1 border border-stone-300 rounded px-3 py-2 text-sm">
-        <button type="submit" class="bg-[#1B2A4A] text-white px-4 py-2 rounded text-sm font-semibold hover:bg-[#243560]">Buscar</button>
+        <button type="submit" class="bg-[#1B2A4A] text-white px-4 py-2 rounded text-sm font-semibold">Buscar</button>
     </form>
+
+    <div class="mb-6 bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-900">
+        <p class="font-semibold mb-1">Métodos de pago aceptados</p>
+        <p class="text-blue-800">Tarjeta de crédito o débito únicamente. Compra a crédito disponible para talleres registrados (pedido mínimo aplicable).</p>
+    </div>
 
     {{if .Query}}
     <p class="text-xs text-stone-500 mb-3">{{len .Parts}} resultado(s) para "{{.Query}}"</p>
-    {{if .Parts}}
-    <div id="results">
-        {{template "partial_parts" .Parts}}
-    </div>
-    {{else}}
-    <p class="text-sm text-stone-400 italic">No se encontraron piezas.</p>
-    {{end}}
+    {{if .Parts}}<div id="results">{{template "partial_parts" .Parts}}</div>
+    {{else}}<p class="text-sm text-stone-400 italic">No se encontraron piezas.</p>{{end}}
     {{end}}
 </div>
-
-{{template "footer" .}}
-{{end}}
+{{template "footer" .}}{{end}}

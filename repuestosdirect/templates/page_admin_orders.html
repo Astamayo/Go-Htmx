@@ -1,44 +1,58 @@
 {{define "page_admin_orders"}}
 {{template "header" .}}
 
-<div class="flex justify-between items-center mb-4">
-    <h1 class="text-xl font-bold text-[#1B2A4A]">Gestión de Pedidos</h1>
-    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 px-4 py-2 rounded-md">Volver al Panel</a>
+<div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+    <h1 class="text-xl font-bold text-[#1B2A4A]">{{if .Completed}}Historial de pedidos{{else}}Pedidos activos{{end}}</h1>
+    <div class="flex gap-2 text-sm">
+        {{if .Completed}}
+        <a href="/admin/orders" class="px-3 py-1.5 bg-stone-100 rounded hover:bg-stone-200">Activos</a>
+        {{else}}
+        <a href="/admin/orders?view=completed" class="px-3 py-1.5 bg-stone-100 rounded hover:bg-stone-200">Historial</a>
+        {{end}}
+        <a href="/admin" class="px-3 py-1.5 bg-stone-100 rounded hover:bg-stone-200">Panel</a>
+    </div>
 </div>
 
 <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
     <table class="w-full text-sm">
         <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
             <tr>
-                <th class="text-left px-4 py-2">ID Pedido</th>
+                <th class="text-left px-4 py-2">Pedido</th>
                 <th class="text-left px-4 py-2">Fecha</th>
-                <th class="text-left px-4 py-2">Estado Actual</th>
-                <th class="text-left px-4 py-2">Actualizar a...</th>
+                <th class="text-left px-4 py-2">Total</th>
+                <th class="text-left px-4 py-2">Estado</th>
+                {{if not .Completed}}<th class="text-right px-4 py-2">Cambiar</th>{{end}}
             </tr>
         </thead>
         <tbody class="divide-y divide-stone-200">
+            {{if not .Orders}}
+            <tr><td colspan="5" class="px-4 py-8 text-center text-stone-500">No hay pedidos.</td></tr>
+            {{else}}
             {{range .Orders}}
-            <tr>
-                <td class="px-4 py-3 font-medium">
-                    <a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a>
-                </td>
-                <td class="px-4 py-3">{{.PlacedAt.Format "02 Jan 2006"}}</td>
-                <td class="px-4 py-3 font-semibold text-blue-800">{{.Status}}</td>
+            {{$order := .}}
+            <tr class="hover:bg-stone-50">
+                <td class="px-4 py-3 font-medium"><a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a></td>
+                <td class="px-4 py-3 text-stone-600">{{.PlacedAt.Format "02/01/2006"}}</td>
+                <td class="px-4 py-3">${{printf "%.2f" .Total}}</td>
                 <td class="px-4 py-3">
-                    <form action="/admin/orders/status" method="POST" class="flex gap-2">
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded {{statusBadgeClass .Status}}">{{.Status}}</span>
+                </td>
+                {{if not $.Completed}}
+                <td class="px-4 py-3 text-right">
+                    <form action="/admin/orders/status" method="POST" class="inline-flex gap-1 items-center">
                         {{template "csrf" $}}
                         <input type="hidden" name="order_id" value="{{.ID}}">
-                        <select name="status" class="border border-stone-300 rounded px-2 py-1 text-sm bg-white">
-                            <option value="Pedido">Pedido (Recibido)</option>
-                            <option value="Enviado">Enviado</option>
-                            <option value="En aduana">En aduana</option>
-                            <option value="Listo para recoger">Listo para recoger</option>
-                            <option value="Llegado">Llegado / Entregado</option>
+                        <select name="status" class="border border-stone-300 rounded px-2 py-1 text-xs bg-white max-w-[140px]">
+                            {{range $.StatusOptions}}
+                            <option value="{{.}}" {{if eq . $order.Status}}selected{{end}}>{{.}}</option>
+                            {{end}}
                         </select>
-                        <button type="submit" class="bg-[#1B2A4A] text-white px-3 py-1 rounded hover:bg-blue-800 text-xs">Actualizar</button>
+                        <button type="submit" class="bg-[#1B2A4A] text-white px-2 py-1 rounded text-xs">OK</button>
                     </form>
                 </td>
+                {{end}}
             </tr>
+            {{end}}
             {{end}}
         </tbody>
     </table>

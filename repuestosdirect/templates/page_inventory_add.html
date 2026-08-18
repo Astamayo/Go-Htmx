@@ -83,6 +83,34 @@
                     class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
             </div>
         </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Número de parte</label>
+                <input type="text" name="part_number" value="{{.Part.PartNumber}}" class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Referencia OEM</label>
+                <input type="text" name="oem_ref" value="{{.Part.OEMRef}}" class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Condición</label>
+                <select name="part_condition" class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm bg-white">
+                    <option value="new" {{if eq .Part.PartCondition "new"}}selected{{end}}>Nuevo</option>
+                    <option value="used" {{if eq .Part.PartCondition "used"}}selected{{end}}>Usado</option>
+                    <option value="refurbished" {{if eq .Part.PartCondition "refurbished"}}selected{{end}}>Reacondicionado</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-stone-700">Precio B2B</label>
+                <input type="number" step="0.01" name="b2b_price" value="{{if .Part.B2BPrice}}{{printf "%.2f" .Part.B2BPrice}}{{end}}" class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-stone-700">Descripción</label>
+            <textarea name="description" rows="2" class="mt-1 block w-full border border-stone-300 rounded-md p-2 text-sm">{{.Part.Description}}</textarea>
+        </div>
         <div>
             <label class="block text-sm font-medium text-stone-700">Disponibilidad</label>
             <select name="availability"

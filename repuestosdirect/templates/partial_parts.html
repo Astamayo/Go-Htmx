@@ -9,7 +9,8 @@
       <p class="text-sm font-semibold text-stone-800">{{.Name}}</p>
       <p class="text-xs font-medium text-[#1B2A4A]">{{.Make}} {{.Model}} {{.Year}}</p>
       <p class="text-xs text-stone-500">
-        {{.Category}} ·
+        {{.Category}}{{if .PartNumber}} · P/N: {{.PartNumber}}{{end}}{{if .OEMRef}} · OEM: {{.OEMRef}}{{end}}
+        · {{.PartCondition}}
         {{if isInStock .Availability}}
           <span class="text-emerald-600 font-medium">{{availabilityLabel .Availability}}</span>
         {{else}}
@@ -23,7 +24,7 @@
       <button
         class="text-xs bg-[#1B2A4A] text-white px-3 py-1.5 rounded hover:bg-[#243560] disabled:opacity-40"
         hx-post="/cart/add" hx-vals='{"part_id":"{{.ID}}"}'
-        hx-target="#cart-badge" hx-swap="outerHTML"
+        hx-target="body" hx-swap="beforeend"
         {{if and (isInStock .Availability) (le .Stock 0)}}disabled{{end}}>
         Agregar
       </button>

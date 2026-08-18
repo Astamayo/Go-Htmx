@@ -11,21 +11,23 @@
   {{else}}
     <div class="divide-y divide-stone-200 border border-stone-200 rounded-lg overflow-hidden mb-4">
       {{range .Items}}
-      <div class="flex items-center justify-between px-4 py-3">
-        <div>
+      <div class="flex items-center justify-between px-4 py-3 gap-2">
+        <div class="min-w-0">
           <p class="text-sm font-semibold">{{.Part.Name}}</p>
-          <p class="text-xs text-stone-500">
-            {{.Part.Make}} {{.Part.Model}} {{.Part.Year}} · {{availabilityShort .Part.Availability}}
-          </p>
+          <p class="text-xs text-stone-500">{{.Part.Make}} {{.Part.Model}} {{.Part.Year}} · {{availabilityShort .Part.Availability}}</p>
         </div>
-        <div class="flex items-center gap-3 text-sm">
+        <div class="flex items-center gap-2 text-sm shrink-0">
           <form method="POST" action="/cart/update">
             {{template "csrf" $}}
             <input type="hidden" name="part_id" value="{{.Part.ID}}">
-            <input type="number" name="qty" value="{{.Qty}}" min="0" class="w-14 border border-stone-300 rounded px-2 py-1 text-sm"
-              onchange="this.form.requestSubmit()">
+            <input type="number" name="qty" value="{{.Qty}}" min="0" class="w-14 border border-stone-300 rounded px-2 py-1 text-sm" onchange="this.form.requestSubmit()">
           </form>
           <span class="font-bold text-[#1B2A4A] w-16 text-right">${{printf "%.2f" .Subtotal}}</span>
+          <form method="POST" action="/cart/remove">
+            {{template "csrf" $}}
+            <input type="hidden" name="part_id" value="{{.Part.ID}}">
+            <button type="submit" class="text-red-500 hover:text-red-700 text-xs px-1" title="Eliminar">✕</button>
+          </form>
         </div>
       </div>
       {{end}}
@@ -36,7 +38,7 @@
     {{if .Shop}}
       <div class="bg-stone-50 border border-stone-200 rounded-lg p-4 mb-5 text-sm">
         <p class="font-semibold text-stone-700 mb-1">Crédito de {{.Shop.Name}}</p>
-        <p class="text-stone-500">Límite: ${{printf "%.2f" .Shop.CreditLimit}} · Usado: ${{printf "%.2f" .Shop.CreditUsed}} · Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span></p>
+        <p class="text-stone-500">Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span> · Mínimo a crédito: ${{printf "%.0f" .MinCredit}}</p>
         <p class="text-stone-500 text-xs mt-1">Plan: {{creditTermsLabel .Shop.CreditTerms .Shop.PaymentSplits}}</p>
       </div>
 
@@ -45,23 +47,21 @@
         <label class="text-sm flex items-center gap-2">
           <input type="radio" name="payment" value="cash" checked> Pagar de contado
         </label>
-        <label class="text-sm flex items-center gap-2 {{if lt .CreditAvailable .Total}}opacity-40{{end}}">
-          <input type="radio" name="payment" value="credit" {{if lt .CreditAvailable .Total}}disabled{{end}}> Usar crédito ({{creditTermsLabel .Shop.CreditTerms .Shop.PaymentSplits}})
+        <label class="text-sm flex items-center gap-2 {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}opacity-40{{end}}">
+          <input type="radio" name="payment" value="credit" {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}disabled{{end}}> Comprar a crédito (mín. ${{printf "%.0f" .MinCredit}})
         </label>
-        <button class="ml-auto bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
-          Confirmar pedido
-        </button>
+        <button class="ml-auto bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">Confirmar pedido</button>
       </form>
     {{else}}
-      <p class="text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded px-3 py-2">
-        Para pagar a crédito y hacer seguimiento del pedido, <a href="/login" class="underline font-semibold">inicia sesión con tu taller</a>.
-      </p>
-      <form method="POST" action="/order/place" class="mt-3">
+      <div class="text-sm bg-stone-50 border border-stone-200 rounded px-3 py-3 mb-3">
+        <p class="font-semibold mb-1">Checkout como invitado</p>
+        <p class="text-stone-500 text-xs">Pago de contado sin cuenta. Para crédito y seguimiento, <a href="/login" class="underline font-semibold">inicia sesión</a>.</p>
+      </div>
+      <form method="POST" action="/order/place" class="flex flex-wrap gap-3">
         {{template "csrf" .}}
         <input type="hidden" name="payment" value="cash">
-        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">
-          Confirmar pedido (contado, sin cuenta)
-        </button>
+        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">Confirmar pedido (invitado)</button>
+        <a href="/login" class="text-sm px-4 py-2 border border-stone-300 rounded">Entrar con cuenta</a>
       </form>
     {{end}}
   {{end}}

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
+	"time"
 )
 
 type Admin struct {
@@ -72,6 +72,7 @@ func (s *Store) initAuthTables() error {
 		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500) NOT NULL DEFAULT ''`,
 		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS b2b_price NUMERIC(10,2)`,
+		`UPDATE shops SET username = id WHERE username IS NULL OR username = ''`,
 	}
 	for _, q := range queries {
 		if _, err := s.db.Exec(q); err != nil {
@@ -269,6 +270,54 @@ func (s *Store) OrderStatusHistory(orderID string) []StatusHistoryEntry {
 type StatusHistoryEntry struct {
 	Status    string
 	ChangedBy string
-	ChangedAt sql.NullTime
+	ChangedAt time.Time
 	Note      string
+}
+
+type AuditEntry struct {
+	ActorRole  string
+	ActorID    string
+	Action     string
+	EntityType string
+	EntityID   string
+	Detail     string
+	CreatedAt  time.Time
+}
+
+func (s *Store) RecentAuditLog(limit int) []AuditEntry {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`SELECT actor_role, actor_id, action, entity_type, entity_id, detail, created_at FROM audit_log ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		if rows.Scan(&e.ActorRole, &e.ActorID, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt) == nil {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (s *Store) UpdateShopPassword(id, password string) error {
+	hashed, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE shops SET password_demo=$2 WHERE id=$1`, id, hashed)
+	return err
+}
+
+func (s *Store) DeactivateShop(id string) error {
+	_, err := s.db.Exec(`UPDATE shops SET active=FALSE, approved=FALSE WHERE id=$1`, id)
+	return err
+}
+
+func (s *Store) AssignDriverToOrder(orderID, driverID string) error {
+	_, err := s.db.Exec(`UPDATE orders SET driver_id=$2 WHERE id=$1`, orderID, driverID)
+	return err
 }

@@ -1,0 +1,28 @@
+{{define "page_admin_shop_form"}}{{template "header" .}}
+<div class="max-w-lg mx-auto bg-white border border-stone-200 rounded-lg p-6">
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-4">{{if .IsEdit}}Editar taller{{else}}Crear taller{{end}}</h1>
+  {{if .Error}}<div class="mb-4 text-sm bg-red-50 text-red-700 border rounded px-3 py-2">{{.Error}}</div>{{end}}
+  <form method="POST" action="{{if .IsEdit}}/admin/shops/edit/{{.Shop.ID}}{{else}}/admin/shops/create{{end}}" class="space-y-3 text-sm">
+    {{template "csrf" .}}
+    <div><label class="text-xs font-semibold text-stone-500">Nombre del taller</label>
+      <input name="name" value="{{.Shop.Name}}" required class="w-full border rounded px-3 py-2"></div>
+    <div><label class="text-xs font-semibold text-stone-500">Usuario de acceso</label>
+      <input name="username" value="{{.Shop.Username}}" required class="w-full border rounded px-3 py-2"></div>
+    <div><label class="text-xs font-semibold text-stone-500">Dueño</label>
+      <input name="owner" value="{{.Shop.Owner}}" class="w-full border rounded px-3 py-2"></div>
+    <div><label class="text-xs font-semibold text-stone-500">Teléfono</label>
+      <input name="phone" value="{{.Shop.Phone}}" class="w-full border rounded px-3 py-2"></div>
+    <div><label class="text-xs font-semibold text-stone-500">Dirección</label>
+      <input name="address" value="{{.Shop.Address}}" class="w-full border rounded px-3 py-2"></div>
+    <div><label class="text-xs font-semibold text-stone-500">{{if .IsEdit}}Nueva contraseña (opcional){{else}}Contraseña{{end}}</label>
+      <input name="password" type="password" {{if not .IsEdit}}required{{end}} class="w-full border rounded px-3 py-2"></div>
+    {{if .IsEdit}}
+    <label class="flex items-center gap-2"><input type="checkbox" name="active" checked> Taller activo</label>
+    {{end}}
+    <div class="flex gap-2 pt-2">
+      <button class="bg-[#1B2A4A] text-white px-4 py-2 rounded font-semibold">Guardar</button>
+      <a href="/admin/shops" class="px-4 py-2 border rounded">Cancelar</a>
+    </div>
+  </form>
+</div>
+{{template "footer" .}}{{end}}

@@ -10,18 +10,24 @@ import (
 )
 
 type Part struct {
-	ID           string
-	Make         string
-	Model        string
-	Year         int
-	Category     string
-	Name         string
-	Source       string
-	PriceUSD     float64
-	Stock        int
-	Courier      string
-	ReorderPoint int
-	Availability string
+	ID            string
+	Make          string
+	Model         string
+	Year          int
+	Category      string
+	Name          string
+	Source        string
+	PriceUSD      float64
+	B2BPrice      *float64
+	Stock         int
+	Courier       string
+	ReorderPoint  int
+	Availability  string
+	PartNumber    string
+	OEMRef        string
+	PartCondition string
+	Description   string
+	PhotoURL      string
 }
 
 type StockRow struct {
@@ -68,15 +74,16 @@ type OrderItem struct {
 }
 
 type Order struct {
-	ID       string
-	ShopID   string
-	Items    []OrderItem
-	Total    float64
-	OnCredit bool
-	Status   OrderStatus
-	PlacedAt time.Time
-	DueDate  time.Time
-	Courier  string
+	ID           string
+	ShopID       string
+	DriverID     string
+	Items        []OrderItem
+	Total        float64
+	OnCredit     bool
+	Status       OrderStatus
+	PlacedAt     time.Time
+	DueDate      time.Time
+	Courier      string
 	PaidAt       *time.Time
 	Installments []Installment
 }
@@ -318,9 +325,9 @@ func (s *Store) Order(orderID string) (*Order, error) {
 	var nullShop sql.NullString
 	var paidAt sql.NullTime
 	err := s.db.QueryRow(
-		`SELECT id, shop_id, total, on_credit, status, placed_at, due_date, courier, paid_at FROM orders WHERE id = $1`,
+		`SELECT id, shop_id, total, on_credit, status, placed_at, due_date, courier, paid_at, COALESCE(driver_id,'') FROM orders WHERE id = $1`,
 		orderID,
-	).Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.PlacedAt, &o.DueDate, &o.Courier, &paidAt)
+	).Scan(&o.ID, &nullShop, &o.Total, &o.OnCredit, &o.Status, &o.PlacedAt, &o.DueDate, &o.Courier, &paidAt, &o.DriverID)
 	if err != nil {
 		return nil, err
 	}
@@ -393,9 +400,10 @@ func (s *Store) Years(make, model string) []int {
 func (s *Store) SearchParts(query string) []Part {
 	q := "%" + query + "%"
 	rows, err := s.db.Query(`
-		SELECT id, make, model, year, category, name, source, price_usd, stock, availability
+		SELECT `+partSelectCols+`
 		FROM parts
 		WHERE name ILIKE $1 OR category ILIKE $1 OR make ILIKE $1 OR model ILIKE $1 OR id ILIKE $1
+			OR part_number ILIKE $1 OR oem_ref ILIKE $1
 		ORDER BY name ASC LIMIT 50`, q)
 	if err != nil {
 		return nil
@@ -404,11 +412,25 @@ func (s *Store) SearchParts(query string) []Part {
 	return scanParts(rows)
 }
 
+const partSelectCols = `id, make, model, year, category, name, source, price_usd, stock, COALESCE(reorder_point,0), availability,
+	COALESCE(part_number,''), COALESCE(oem_ref,''), COALESCE(part_condition,'new'), COALESCE(description,''), COALESCE(photo_url,''), b2b_price`
+
+func scanPartFromRow(scanner interface{ Scan(...any) error }) (Part, error) {
+	var p Part
+	var b2b sql.NullFloat64
+	err := scanner.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock,
+		&p.ReorderPoint, &p.Availability, &p.PartNumber, &p.OEMRef, &p.PartCondition, &p.Description, &p.PhotoURL, &b2b)
+	if b2b.Valid {
+		v := b2b.Float64
+		p.B2BPrice = &v
+	}
+	return p, err
+}
+
 func scanParts(rows *sql.Rows) []Part {
 	var parts []Part
 	for rows.Next() {
-		var p Part
-		if err := rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.Availability); err == nil {
+		if p, err := scanPartFromRow(rows); err == nil {
 			parts = append(parts, p)
 		}
 	}
@@ -416,12 +438,14 @@ func scanParts(rows *sql.Rows) []Part {
 }
 
 func (s *Store) StockReport() []StockRow {
-	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability FROM parts ORDER BY name`)
+	rows, _ := s.db.Query(`SELECT ` + partSelectCols + ` FROM parts ORDER BY name`)
 	defer rows.Close()
 	var out []StockRow
 	for rows.Next() {
-		var p Part
-		rows.Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint, &p.Availability)
+		p, err := scanPartFromRow(rows)
+		if err != nil {
+			continue
+		}
 		status := "ok"
 		if p.Stock == 0 && isInStock(p.Availability) {
 			status = "out"
@@ -468,6 +492,11 @@ func (s *Store) AssignCourier(orderID, courier string) error {
 	return nil
 }
 
+func (s *Store) AssignCourierAndDriver(orderID, courier, driverID string) error {
+	_, err := s.db.Exec(`UPDATE orders SET courier = $1, driver_id = $2 WHERE id = $3`, courier, driverID, orderID)
+	return err
+}
+
 func (s *Store) DriverReadyOrders() []*Order {
 	rows, err := s.db.Query(`
 		SELECT id, shop_id, total, on_credit, status, placed_at, due_date
@@ -482,24 +511,24 @@ func (s *Store) DriverReadyOrders() []*Order {
 }
 
 func (s *Store) PartsFor(make, model string, year int) []Part {
-	rows, _ := s.db.Query(`SELECT id, make, model, year, category, name, source, price_usd, stock, availability FROM parts WHERE make = $1 AND model = $2 AND year = $3`, make, model, year)
+	rows, _ := s.db.Query(`SELECT `+partSelectCols+` FROM parts WHERE make = $1 AND model = $2 AND year = $3`, make, model, year)
 	defer rows.Close()
 	return scanParts(rows)
 }
 
 func (s *Store) Part(id string) (Part, bool) {
-	var p Part
-	err := s.db.QueryRow(`SELECT id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability FROM parts WHERE id = $1`, id).
-		Scan(&p.ID, &p.Make, &p.Model, &p.Year, &p.Category, &p.Name, &p.Source, &p.PriceUSD, &p.Stock, &p.ReorderPoint, &p.Availability)
+	p, err := scanPartFromRow(s.db.QueryRow(`SELECT `+partSelectCols+` FROM parts WHERE id = $1`, id))
 	return p, err == nil
 }
 
-func (s *Store) UpdatePart(id, makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability string) error {
+func (s *Store) UpdatePart(id, makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability, partNumber, oemRef, condition, description, photoURL string, b2bPrice *float64) error {
 	res, err := s.db.Exec(`
 		UPDATE parts SET make=$2, model=$3, year=$4, category=$5, name=$6, source=$7,
-			price_usd=$8, stock=$9, reorder_point=$10, availability=$11
+			price_usd=$8, stock=$9, reorder_point=$10, availability=$11,
+			part_number=$12, oem_ref=$13, part_condition=$14, description=$15, photo_url=$16, b2b_price=$17
 		WHERE id=$1`,
-		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability)
+		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability,
+		partNumber, oemRef, condition, description, photoURL, b2bPrice)
 	if err != nil {
 		return err
 	}
@@ -579,10 +608,10 @@ func (s *Store) AddShop(name, owner, phone, address, password string) (*Shop, er
 	s.db.QueryRow("SELECT nextval('shop_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("S-%04d", seq)
 
-	query := `INSERT INTO shops (id, name, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active)
-              VALUES ($1, $2, $3, $4, $5, $6, 0.00, $7, $8, $9, $10, FALSE, TRUE)
+	query := `INSERT INTO shops (id, name, username, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, 0.00, $8, $9, $10, $11, FALSE, TRUE)
               RETURNING ` + shopColumns
-	sh, err := scanShop(s.db.QueryRow(query, id, name, owner, phone, address,
+	sh, err := scanShop(s.db.QueryRow(query, id, name, name, owner, phone, address,
 		DefaultCreditLimit, DefaultCreditTerms, DefaultPaymentSplits, DefaultReminderDays, hashed))
 	return sh, err
 }
@@ -627,12 +656,12 @@ func (s *Store) UpgradePasswordHash(shopID, hashed string) {
 	s.db.Exec(`UPDATE shops SET password_demo = $1 WHERE id = $2`, hashed, shopID)
 }
 
-func (s *Store) AddPart(makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability string) error {
+func (s *Store) AddPart(makeStr, model, category, name, source string, year, stock, reorderPoint int, price float64, availability, partNumber, oemRef, condition, description, photoURL string, b2bPrice *float64) error {
 	var seq int
 	s.db.QueryRow("SELECT nextval('part_id_seq')").Scan(&seq)
 	id := fmt.Sprintf("P-%04d", seq)
-	_, err := s.db.Exec(`INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability)
+	_, err := s.db.Exec(`INSERT INTO parts (id, make, model, year, category, name, source, price_usd, stock, reorder_point, availability, part_number, oem_ref, part_condition, description, photo_url, b2b_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		id, makeStr, model, year, category, name, source, price, stock, reorderPoint, availability, partNumber, oemRef, condition, description, photoURL, b2bPrice)
 	return err
 }
 
@@ -673,6 +702,10 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	terms := DefaultCreditTerms
 	splits := DefaultPaymentSplits
 	if shopID != "" && onCredit {
+		minAmt := minCreditOrderAmount()
+		if total < minAmt {
+			return nil, fmt.Errorf("pedido mínimo a crédito: $%.2f (total actual: $%.2f)", minAmt, total)
+		}
 		var creditLimit, creditUsed float64
 		var creditTerms, paymentSplits int
 		err = tx.QueryRow(
@@ -748,6 +781,8 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+
+	s.RecordOrderStatus(orderID, status, "system", "Pedido creado")
 
 	return &Order{
 		ID:       orderID,

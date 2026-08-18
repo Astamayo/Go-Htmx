@@ -2,41 +2,42 @@
 {{template "header" .}}
 
 <div class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-[#1B2A4A] mb-1">Mis Rutas (Repartidor)</h1>
-    <p class="text-sm text-stone-500 mb-6">Pedidos listos para entrega física.</p>
+    <h1 class="text-2xl font-bold text-[#1B2A4A] mb-1">Mis entregas</h1>
+    <p class="text-sm text-stone-500 mb-6">Actualiza el estado de cada pedido asignado.</p>
 
     <div class="space-y-4">
         {{if not .DriverRoutes}}
-        <p class="text-center text-stone-500 py-10">No hay entregas pendientes hoy. ¡Buen trabajo!</p>
+        <p class="text-center text-stone-500 py-10">No hay entregas pendientes.</p>
         {{else}}
         {{range .DriverRoutes}}
         <div class="bg-white border border-stone-200 rounded-lg shadow-sm p-4">
             <div class="flex justify-between items-start mb-2">
                 <div>
                     <h2 class="font-bold text-lg text-[#1B2A4A]">{{.Shop.Name}}</h2>
-                    <p class="text-sm font-medium text-stone-600">Contacto: {{.Shop.Owner}}</p>
+                    <p class="text-sm text-stone-600">{{.Shop.Address}}</p>
                 </div>
-                <span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded">{{.Order.Status}}</span>
+                <span class="text-xs font-semibold px-2 py-1 rounded {{statusBadgeClass .Order.Status}}">{{.Order.Status}}</span>
             </div>
-
-            <div class="bg-stone-50 rounded p-3 mb-4 text-sm text-stone-600">
-                <p class="flex items-start gap-2 mb-2">📍 <span>{{.Shop.Address}}</span></p>
-                <p class="flex items-center gap-2 mb-1">📞 <a href="tel:{{.Shop.Phone}}" class="text-blue-600 underline">{{.Shop.Phone}}</a></p>
-                <p class="flex items-center gap-2 mb-1">📦 Pedido: <strong>{{.Order.ID}}</strong></p>
-                <p class="flex items-center gap-2">💰 Total: <strong>${{printf "%.2f" .Order.Total}}</strong>{{if .Order.OnCredit}} (crédito){{end}}</p>
-            </div>
-
-            <div class="flex gap-2">
-                <a href="{{mapsQuery .Shop.Address .Shop.Name}}" target="_blank"
-                    class="w-1/2 bg-stone-100 text-stone-700 font-semibold py-2 rounded text-center border border-stone-200 hover:bg-stone-200">
-                    📍 Mapa
-                </a>
-                <form action="/driver/deliver" method="POST" class="w-1/2">
+            <p class="text-sm mb-3">📦 {{.Order.ID}} · ${{printf "%.2f" .Order.Total}}</p>
+            <div class="flex gap-2 flex-wrap">
+                <a href="{{mapsQuery .Shop.Address .Shop.Name}}" target="_blank" class="flex-1 min-w-[100px] bg-stone-100 text-center py-2 rounded text-sm border">Mapa</a>
+                <form action="/driver/status" method="POST" class="flex-1 min-w-[100px]">
                     {{template "csrf" $}}
                     <input type="hidden" name="order_id" value="{{.Order.ID}}">
-                    <button type="submit" class="w-full bg-emerald-600 text-white font-semibold py-2 rounded hover:bg-emerald-700">
-                        ✅ Entregado
-                    </button>
+                    <input type="hidden" name="status" value="En camino">
+                    <button class="w-full bg-amber-500 text-white py-2 rounded text-sm font-semibold">En camino</button>
+                </form>
+                <form action="/driver/deliver" method="POST" class="flex-1 min-w-[100px]">
+                    {{template "csrf" $}}
+                    <input type="hidden" name="order_id" value="{{.Order.ID}}">
+                    <input type="hidden" name="status" value="Entregado">
+                    <button class="w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold">Entregado</button>
+                </form>
+                <form action="/driver/deliver" method="POST" class="flex-1 min-w-[100px]">
+                    {{template "csrf" $}}
+                    <input type="hidden" name="order_id" value="{{.Order.ID}}">
+                    <input type="hidden" name="status" value="No se pudo entregar">
+                    <button class="w-full bg-red-100 text-red-700 py-2 rounded text-sm">No entregado</button>
                 </form>
             </div>
         </div>

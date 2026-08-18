@@ -1,8 +1,7 @@
 {{define "page_login"}}{{template "header" .}}
 <div class="max-w-sm mx-auto mt-10 bg-white border border-stone-200 rounded-lg p-6 shadow-sm">
-  <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Entrar a tu cuenta</h1>
-  <p class="text-sm text-stone-500 mb-5">Talleres registrados — pedidos, crédito y estado de envíos.</p>
-
+  <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Entrar — Taller</h1>
+  <p class="text-sm text-stone-500 mb-5">Acceso para talleres: pedidos, entregas e inventario.</p>
 
   {{if .Error}}
   <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>
@@ -11,14 +10,13 @@
   <form method="POST" action="/login" class="space-y-3">
     {{template "csrf" .}}
     <div>
-      <label class="block text-xs font-semibold text-stone-500 mb-1">Nombre del taller</label>
-      <select name="name" class="w-full border border-stone-300 rounded px-3 py-2 text-sm">
-        {{range .Shops}}<option value="{{.Name}}">{{.Name}}</option>{{end}}
-      </select>
+      <label class="block text-xs font-semibold text-stone-500 mb-1">Usuario</label>
+      <input type="text" name="username" required autocomplete="username"
+        class="w-full border border-stone-300 rounded px-3 py-2 text-sm" placeholder="usuario del taller">
     </div>
     <div>
-      <label class="block text-xs font-semibold text-stone-500 mb-1">Contraseña (demo: 1234)</label>
-      <input type="password" name="password" value="1234"
+      <label class="block text-xs font-semibold text-stone-500 mb-1">Contraseña</label>
+      <input type="password" name="password" required autocomplete="current-password"
         class="w-full border border-stone-300 rounded px-3 py-2 text-sm">
     </div>
     <button class="w-full bg-[#1B2A4A] text-white rounded py-2 text-sm font-semibold hover:bg-[#243560]">
@@ -26,12 +24,7 @@
     </button>
   </form>
 
-  <p class="text-xs text-stone-400 mt-4">¿Nuevo taller? <a href="/signup"
-      class="text-[#1B2A4A] underline font-semibold">Crea tu
-      cuenta</a></p>
-
-  <p class="text-xs text-stone-400 mt-4">
-    ¿Solo quieres ver el catálogo? <a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública
-    </a></p>
+  <p class="text-xs text-stone-400 mt-4">¿Nuevo taller? <a href="/signup" class="text-[#1B2A4A] underline font-semibold">Crea tu cuenta</a></p>
+  <p class="text-xs text-stone-400 mt-2"><a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública</a> · <a href="/admin/login" class="underline">Admin</a> · <a href="/driver/login" class="underline">Repartidor</a></p>
 </div>
 {{template "footer" .}}{{end}}

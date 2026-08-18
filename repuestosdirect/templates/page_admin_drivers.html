@@ -1,0 +1,37 @@
+{{define "page_admin_drivers"}}{{template "header" .}}
+<div class="flex justify-between items-center mb-4">
+  <h1 class="text-xl font-bold text-[#1B2A4A]">Repartidores</h1>
+  <a href="/admin" class="text-sm bg-stone-100 px-3 py-1.5 rounded">Panel</a>
+</div>
+{{if .Error}}<div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>{{end}}
+
+<div class="bg-white border border-stone-200 rounded-lg p-4 mb-6">
+  <h2 class="font-semibold mb-3">Agregar repartidor</h2>
+  <form action="/admin/drivers/add" method="POST" class="grid md:grid-cols-3 gap-3 text-sm">
+    {{template "csrf" .}}
+    <input name="username" placeholder="Usuario" required class="border rounded px-2 py-1.5">
+    <input name="name" placeholder="Nombre" required class="border rounded px-2 py-1.5">
+    <input name="phone" placeholder="Teléfono" class="border rounded px-2 py-1.5">
+    <input name="zone" placeholder="Zona" class="border rounded px-2 py-1.5">
+    <input name="password" type="password" placeholder="Contraseña" required class="border rounded px-2 py-1.5">
+    <button class="bg-[#1B2A4A] text-white rounded py-1.5 font-semibold">Crear</button>
+  </form>
+</div>
+
+<div class="space-y-3">
+  {{range .Drivers}}
+  <div class="bg-white border border-stone-200 rounded-lg p-4">
+    <form action="/admin/drivers/edit/{{.ID}}" method="POST" class="grid md:grid-cols-4 gap-2 text-sm items-end">
+      {{template "csrf" $}}
+      <div><label class="text-xs text-stone-500">Usuario</label><p class="font-medium">{{.Username}}</p></div>
+      <div><label class="text-xs text-stone-500">Nombre</label><input name="name" value="{{.Name}}" class="w-full border rounded px-2 py-1"></div>
+      <div><label class="text-xs text-stone-500">Teléfono</label><input name="phone" value="{{.Phone}}" class="w-full border rounded px-2 py-1"></div>
+      <div><label class="text-xs text-stone-500">Zona</label><input name="zone" value="{{.Zone}}" class="w-full border rounded px-2 py-1"></div>
+      <div><label class="text-xs text-stone-500">Nueva contraseña</label><input name="password" type="password" placeholder="(opcional)" class="w-full border rounded px-2 py-1"></div>
+      <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="active" {{if .Active}}checked{{end}}> Activo</label>
+      <button class="bg-stone-800 text-white rounded py-1.5">Guardar</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{template "footer" .}}{{end}}

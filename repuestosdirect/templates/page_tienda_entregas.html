@@ -1,0 +1,15 @@
+{{define "page_tienda_entregas"}}{{template "header" .}}
+<h1 class="text-xl font-bold text-[#1B2A4A] mb-4">Entregas pendientes</h1>
+<div class="space-y-3">
+  {{if not .Pending}}<p class="text-stone-500 text-sm">No hay entregas en camino.</p>{{end}}
+  {{range .Pending}}
+  <div class="bg-white border border-stone-200 rounded-lg p-4">
+    <div class="flex justify-between items-center">
+      <span class="font-semibold">{{.ID}}</span>
+      <span class="text-xs px-2 py-0.5 rounded {{statusBadgeClass .Status}}">{{.Status}}</span>
+    </div>
+    <p class="text-sm text-stone-500 mt-1">${{printf "%.2f" .Total}} · {{.PlacedAt.Format "02/01/2006"}}</p>
+  </div>
+  {{end}}
+</div>
+{{template "footer" .}}{{end}}

@@ -1,0 +1,25 @@
+{{define "page_tienda_inventario"}}{{template "header" .}}
+<h1 class="text-xl font-bold text-[#1B2A4A] mb-4">Inventario</h1>
+{{if .LowStock}}
+<div class="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+  <strong>Alerta:</strong> {{len .LowStock}} repuesto(s) con stock bajo.
+</div>
+{{end}}
+<div class="bg-white border border-stone-200 rounded-lg overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-stone-50 text-xs uppercase text-stone-500">
+      <tr><th class="text-left px-3 py-2">Repuesto</th><th class="text-left px-3 py-2">Nº parte</th><th class="text-right px-3 py-2">Stock</th><th class="text-right px-3 py-2">Precio</th></tr>
+    </thead>
+    <tbody class="divide-y divide-stone-100">
+      {{range .StockRows}}
+      <tr class="{{if eq .Status "reorder"}}bg-amber-50{{else if eq .Status "out"}}bg-red-50{{end}}">
+        <td class="px-3 py-2">{{.Part.Name}}<br><span class="text-xs text-stone-400">{{.Part.Make}} {{.Part.Model}}</span></td>
+        <td class="px-3 py-2 text-stone-500">{{.Part.PartNumber}}</td>
+        <td class="px-3 py-2 text-right">{{.Part.Stock}}</td>
+        <td class="px-3 py-2 text-right">${{printf "%.2f" .Part.PriceUSD}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{template "footer" .}}{{end}}

@@ -1,0 +1,27 @@
+{{define "page_tienda_pedidos"}}{{template "header" .}}
+<div class="flex flex-wrap justify-between items-center gap-2 mb-4">
+  <h1 class="text-xl font-bold text-[#1B2A4A]">{{if .Completed}}Historial{{else}}Pedidos activos{{end}}</h1>
+  <div class="flex gap-2 text-sm">
+    {{if .Completed}}<a href="/tienda/pedidos" class="px-3 py-1.5 bg-stone-100 rounded">Activos</a>
+    {{else}}<a href="/tienda/pedidos/historial" class="px-3 py-1.5 bg-stone-100 rounded">Historial</a>{{end}}
+  </div>
+</div>
+<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-stone-50 text-xs uppercase text-stone-500">
+      <tr><th class="text-left px-4 py-2">Pedido</th><th class="text-left px-4 py-2">Fecha</th><th class="text-left px-4 py-2">Total</th><th class="text-left px-4 py-2">Estado</th></tr>
+    </thead>
+    <tbody class="divide-y divide-stone-200">
+      {{if not .Orders}}<tr><td colspan="4" class="px-4 py-8 text-center text-stone-500">Sin pedidos.</td></tr>{{end}}
+      {{range .Orders}}
+      <tr class="hover:bg-stone-50">
+        <td class="px-4 py-3"><a href="/tienda/pedidos/{{.ID}}" class="text-blue-600 font-medium hover:underline">{{.ID}}</a></td>
+        <td class="px-4 py-3">{{.PlacedAt.Format "02/01/2006"}}</td>
+        <td class="px-4 py-3">${{printf "%.2f" .Total}}</td>
+        <td class="px-4 py-3"><span class="text-xs font-semibold px-2 py-0.5 rounded {{statusBadgeClass .Status}}">{{.Status}}</span></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{template "footer" .}}{{end}}

@@ -4,9 +4,12 @@
 <div class="flex justify-between items-center mb-4">
     <div>
         <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Gestión de talleres</h1>
-        <p class="text-sm text-stone-500">Aprueba talleres, ajusta crédito y términos de pago, o elimina clientes inactivos.</p>
+        <p class="text-sm text-stone-500">Aprueba, edita crédito o desactiva talleres.</p>
     </div>
-    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 px-4 py-2 rounded-md">Volver al Panel</a>
+    <div class="flex gap-2">
+        <a href="/admin/shops/create" class="text-sm bg-[#1B2A4A] text-white px-4 py-2 rounded-md">Crear taller</a>
+        <a href="/admin" class="text-sm bg-stone-100 px-4 py-2 rounded-md">Panel</a>
+    </div>
 </div>
 
 {{if .Error}}
@@ -58,8 +61,9 @@
         <div class="flex flex-wrap justify-between gap-2 mb-3">
             <div>
                 <h3 class="font-bold text-[#1B2A4A]">{{.Name}}</h3>
-                <p class="text-xs text-stone-500">{{.Owner}} · {{.Phone}}</p>
+                <p class="text-xs text-stone-500">{{.Owner}} · {{.Phone}} · @{{.Username}}</p>
             </div>
+            <a href="/admin/shops/edit/{{.ID}}" class="text-xs text-blue-600 underline">Editar</a>
             <div class="text-sm text-right">
                 <p>Usado: <strong>${{printf "%.2f" .CreditUsed}}</strong> / ${{printf "%.2f" .CreditLimit}}</p>
                 <p class="text-emerald-600">Disponible: ${{printf "%.2f" (sub .CreditLimit .CreditUsed)}}</p>

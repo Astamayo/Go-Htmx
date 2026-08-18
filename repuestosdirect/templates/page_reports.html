@@ -1,96 +1,77 @@
 {{define "page_reports"}}
 {{template "header" .}}
 
-<div class="flex justify-between items-center mb-6">
+<div class="flex flex-wrap justify-between items-center gap-2 mb-6">
     <div>
         <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Reportes</h1>
-        <p class="text-sm text-stone-500">Resumen del negocio y alertas operativas.</p>
+        <p class="text-sm text-stone-500">Métricas, gráficos y registro de auditoría.</p>
     </div>
-    <a href="/admin" class="text-sm font-medium text-stone-600 bg-stone-100 px-4 py-2 rounded-md">Volver al Panel</a>
+    <a href="/admin" class="text-sm bg-stone-100 px-4 py-2 rounded-md">Panel</a>
 </div>
 
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-    <div class="bg-white border border-stone-200 rounded-lg p-4">
-        <p class="text-xs text-stone-400">Pedidos totales</p>
-        <p class="text-2xl font-bold text-[#1B2A4A]">{{.Summary.TotalOrders}}</p>
+    <div class="bg-white border rounded-lg p-4"><p class="text-xs text-stone-400">Pedidos</p><p class="text-2xl font-bold">{{.Summary.TotalOrders}}</p></div>
+    <div class="bg-white border rounded-lg p-4"><p class="text-xs text-stone-400">Ventas</p><p class="text-2xl font-bold text-emerald-600">${{printf "%.2f" .Summary.TotalSales}}</p></div>
+    <div class="bg-white border rounded-lg p-4"><p class="text-xs text-stone-400">Crédito pend.</p><p class="text-2xl font-bold text-amber-600">${{printf "%.2f" .Summary.CreditOutstanding}}</p></div>
+    <div class="bg-white border rounded-lg p-4"><p class="text-xs text-stone-400">Talleres</p><p class="text-2xl font-bold">{{.Summary.ActiveShops}}</p></div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white border rounded-lg p-4">
+        <h2 class="font-semibold text-sm mb-3">Ingresos por mes</h2>
+        <canvas id="revenueChart" height="180"></canvas>
     </div>
-    <div class="bg-white border border-stone-200 rounded-lg p-4">
-        <p class="text-xs text-stone-400">Ventas totales</p>
-        <p class="text-2xl font-bold text-emerald-600">${{printf "%.2f" .Summary.TotalSales}}</p>
-    </div>
-    <div class="bg-white border border-stone-200 rounded-lg p-4">
-        <p class="text-xs text-stone-400">Crédito pendiente</p>
-        <p class="text-2xl font-bold text-amber-600">${{printf "%.2f" .Summary.CreditOutstanding}}</p>
-    </div>
-    <div class="bg-white border border-stone-200 rounded-lg p-4">
-        <p class="text-xs text-stone-400">Talleres activos</p>
-        <p class="text-2xl font-bold text-[#1B2A4A]">{{.Summary.ActiveShops}}</p>
+    <div class="bg-white border rounded-lg p-4">
+        <h2 class="font-semibold text-sm mb-3">Top repuestos vendidos</h2>
+        <canvas id="partsChart" height="180"></canvas>
     </div>
 </div>
 
-{{if gt .Summary.OverdueCount 0}}
-<div class="mb-6 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-4 py-3">
-    ⚠️ {{.Summary.OverdueCount}} pedido(s) a crédito vencido(s).
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-2">Pedidos recientes</h2>
+<div class="flex gap-2 text-xs mb-3">
+    <span class="text-stone-500">Ordenar:</span>
+    <a href="/admin/reports?sort=date" class="{{if eq .SortBy "date"}}font-bold{{end}} underline">Fecha</a>
+    <a href="/admin/reports?sort=revenue" class="{{if eq .SortBy "revenue"}}font-bold{{end}} underline">Ingresos</a>
+    <a href="/admin/reports?sort=shop" class="{{if eq .SortBy "shop"}}font-bold{{end}} underline">Taller</a>
 </div>
-{{end}}
-
-{{if .LowStock}}
-<div class="mb-8">
-    <h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Alertas de inventario bajo ({{.Summary.LowStockCount}})</h2>
-    <div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
-                <tr>
-                    <th class="text-left px-4 py-2">Pieza</th>
-                    <th class="text-left px-4 py-2">Vehículo</th>
-                    <th class="text-center px-4 py-2">Stock</th>
-                    <th class="text-center px-4 py-2">Estado</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-stone-200">
-                {{range .LowStock}}
-                <tr>
-                    <td class="px-4 py-2 font-medium">{{.Part.Name}}</td>
-                    <td class="px-4 py-2 text-stone-500">{{.Part.Make}} {{.Part.Model}} {{.Part.Year}}</td>
-                    <td class="px-4 py-2 text-center font-bold">{{.Part.Stock}}</td>
-                    <td class="px-4 py-2 text-center">
-                        {{if eq .Status "out"}}
-                        <span class="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700">Agotado</span>
-                        {{else}}
-                        <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">Reordenar</span>
-                        {{end}}
-                    </td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
-    </div>
-</div>
-{{end}}
-
-<h2 class="text-lg font-bold text-[#1B2A4A] mb-3">Pedidos recientes</h2>
-<div class="bg-white border border-stone-200 rounded-lg overflow-hidden">
+<div class="bg-white border rounded-lg overflow-hidden mb-8">
     <table class="w-full text-sm">
-        <thead class="bg-stone-50 text-stone-500 text-xs uppercase">
-            <tr>
-                <th class="text-left px-4 py-2">Pedido</th>
-                <th class="text-left px-4 py-2">Fecha</th>
-                <th class="text-left px-4 py-2">Total</th>
-                <th class="text-left px-4 py-2">Estado</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-stone-200">
+        <thead class="bg-stone-50 text-xs uppercase text-stone-500"><tr><th class="text-left px-4 py-2">Pedido</th><th class="text-left px-4 py-2">Fecha</th><th class="text-left px-4 py-2">Total</th><th class="text-left px-4 py-2">Estado</th></tr></thead>
+        <tbody class="divide-y divide-stone-100">
             {{range .RecentOrders}}
-            <tr>
-                <td class="px-4 py-2"><a href="/admin/orders/{{.ID}}" class="text-blue-600 hover:underline">{{.ID}}</a></td>
-                <td class="px-4 py-2">{{.PlacedAt.Format "02 Jan 2006"}}</td>
-                <td class="px-4 py-2">${{printf "%.2f" .Total}}</td>
-                <td class="px-4 py-2">{{.Status}}</td>
-            </tr>
+            <tr><td class="px-4 py-2"><a href="/admin/orders/{{.ID}}" class="text-blue-600">{{.ID}}</a></td><td class="px-4 py-2">{{.PlacedAt.Format "02/01/2006"}}</td><td class="px-4 py-2">${{printf "%.2f" .Total}}</td><td class="px-4 py-2"><span class="text-xs px-2 py-0.5 rounded {{statusBadgeClass .Status}}">{{.Status}}</span></td></tr>
             {{end}}
         </tbody>
     </table>
 </div>
 
-{{template "footer" .}}
-{{end}}
+<h2 class="text-lg font-bold text-[#1B2A4A] mb-2">Registro de auditoría</h2>
+<div class="bg-white border rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-stone-50 text-xs uppercase text-stone-500"><tr><th class="text-left px-3 py-2">Fecha</th><th class="text-left px-3 py-2">Actor</th><th class="text-left px-3 py-2">Acción</th><th class="text-left px-3 py-2">Detalle</th></tr></thead>
+        <tbody class="divide-y divide-stone-100 text-xs">
+            {{range .AuditLog}}
+            <tr><td class="px-3 py-2">{{.CreatedAt.Format "02/01 15:04"}}</td><td class="px-3 py-2">{{.ActorRole}}/{{.ActorID}}</td><td class="px-3 py-2">{{.Action}}</td><td class="px-3 py-2 text-stone-500">{{.EntityType}} {{.EntityID}} {{.Detail}}</td></tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  var rev = {{toJSON .RevenueMonths}};
+  var revLabels = Object.keys(rev || {});
+  var revData = revLabels.map(function(k){ return rev[k]; });
+  if (revLabels.length && document.getElementById('revenueChart')) {
+    new Chart(document.getElementById('revenueChart'), { type: 'line', data: { labels: revLabels, datasets: [{ label: 'USD', data: revData, borderColor: '#1B2A4A', tension: 0.3 }] }, options: { plugins: { legend: { display: false } } } });
+  }
+  var parts = {{toJSON .TopParts}};
+  var partLabels = Object.keys(parts || {}).slice(0, 8);
+  var partData = partLabels.map(function(k){ return parts[k]; });
+  if (partLabels.length && document.getElementById('partsChart')) {
+    new Chart(document.getElementById('partsChart'), { type: 'bar', data: { labels: partLabels, datasets: [{ data: partData, backgroundColor: '#C99A5B' }] }, options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 45, font: { size: 9 } } } } } });
+  }
+})();
+</script>
+{{template "footer" .}}{{end}}
