@@ -12,7 +12,10 @@ import (
 type Session struct {
 	mu        sync.RWMutex
 	ID        string
+	Role      Role
 	ShopID    string
+	AdminID   string
+	DriverID  string
 	Cart      map[string]int
 	CSRFToken string
 }
@@ -40,6 +43,7 @@ func getSession(w http.ResponseWriter, r *http.Request) *Session {
 	sid := newSessionID()
 	s := &Session{
 		ID:        sid,
+		Role:      RoleGuest,
 		Cart:      map[string]int{},
 		CSRFToken: newCSRFToken(),
 	}
@@ -62,14 +66,13 @@ func (s *Session) persist() {
 }
 
 func (s *Session) setShopID(id string) {
-	s.mu.Lock()
-	s.ShopID = id
-	s.mu.Unlock()
-	s.persist()
+	s.setAuth(RoleShop, id, "", "")
 }
 
 func (s *Session) clearShopID() {
-	s.setShopID("")
+	if s.role() == RoleShop {
+		s.clearAuth()
+	}
 }
 
 func (s *Session) setCart(cart map[string]int) {
@@ -79,11 +82,13 @@ func (s *Session) setCart(cart map[string]int) {
 	s.persist()
 }
 
-func (s *Session) addToCart(partID string) {
+func (s *Session) addToCart(partID string) int {
 	s.mu.Lock()
 	s.Cart[partID]++
+	qty := s.Cart[partID]
 	s.mu.Unlock()
 	s.persist()
+	return qty
 }
 
 func (s *Session) updateCart(partID string, qty int) {
@@ -93,6 +98,13 @@ func (s *Session) updateCart(partID string, qty int) {
 	} else {
 		s.Cart[partID] = qty
 	}
+	s.mu.Unlock()
+	s.persist()
+}
+
+func (s *Session) removeFromCart(partID string) {
+	s.mu.Lock()
+	delete(s.Cart, partID)
 	s.mu.Unlock()
 	s.persist()
 }
@@ -139,4 +151,17 @@ func cartFromJSON(b []byte) map[string]int {
 
 func sessionExpiry() time.Time {
 	return time.Now().Add(7 * 24 * time.Hour)
+}
+
+func actorLabel(s *Session) string {
+	switch s.role() {
+	case RoleAdmin:
+		return "admin:" + s.adminID()
+	case RoleShop:
+		return "shop:" + s.shopID()
+	case RoleDriver:
+		return "driver:" + s.driverID()
+	default:
+		return "guest"
+	}
 }

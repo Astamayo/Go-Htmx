@@ -32,6 +32,7 @@ type StockRow struct {
 type Shop struct {
 	ID           string
 	Name         string
+	Username     string
 	Owner        string
 	Phone        string
 	Address      string
@@ -48,11 +49,15 @@ type Shop struct {
 type OrderStatus string
 
 const (
-	StatusPedido  OrderStatus = "Pedido"
-	StatusEnviado OrderStatus = "Enviado"
-	StatusAduana  OrderStatus = "En aduana"
-	StatusLlegado OrderStatus = "Llegado"
-	StatusListo   OrderStatus = "Listo para recoger"
+	StatusPedido      OrderStatus = "Pedido"
+	StatusConfirmado  OrderStatus = "Confirmado"
+	StatusEnviado     OrderStatus = "Enviado"
+	StatusAduana      OrderStatus = "En aduana"
+	StatusEnCamino     OrderStatus = "En camino"
+	StatusListo       OrderStatus = "Listo para recoger"
+	StatusLlegado      OrderStatus = "Entregado"
+	StatusNoEntregado OrderStatus = "No se pudo entregar"
+	StatusLlegadoLegacy OrderStatus = "Llegado" // legacy alias
 )
 
 type OrderItem struct {
@@ -198,8 +203,7 @@ func (s *Store) initTables() error {
 			return err
 		}
 	}
-
-	return nil
+	return s.initAuthTables()
 }
 
 func (s *Store) seedInitialData() {
@@ -230,36 +234,48 @@ func (s *Store) seedInitialData() {
 // --- Sessions ---
 
 func (s *Store) LoadSession(id string) (*Session, bool) {
-	var shopID, csrf string
+	var shopID, adminID, driverID, role, csrf string
 	var cartJSON []byte
 	var expires time.Time
 	err := s.db.QueryRow(
-		`SELECT shop_id, cart, csrf_token, expires_at FROM sessions WHERE id = $1 AND expires_at > now()`,
+		`SELECT shop_id, admin_id, driver_id, role, cart, csrf_token, expires_at FROM sessions WHERE id = $1 AND expires_at > now()`,
 		id,
-	).Scan(&shopID, &cartJSON, &csrf, &expires)
+	).Scan(&shopID, &adminID, &driverID, &role, &cartJSON, &csrf, &expires)
 	if err != nil {
 		return nil, false
 	}
-	return &Session{
-		ID:        id,
-		ShopID:    shopID,
-		Cart:      cartFromJSON(cartJSON),
-		CSRFToken: csrf,
-	}, true
+	sess := &Session{
+		ID: id, ShopID: shopID, AdminID: adminID, DriverID: driverID,
+		Role: Role(role), Cart: cartFromJSON(cartJSON), CSRFToken: csrf,
+	}
+	if sess.Role == "" {
+		if shopID != "" {
+			sess.Role = RoleShop
+		} else {
+			sess.Role = RoleGuest
+		}
+	}
+	return sess, true
 }
 
 func (s *Store) SaveSession(sess *Session) {
 	sess.mu.RLock()
 	shopID := sess.ShopID
+	adminID := sess.AdminID
+	driverID := sess.DriverID
+	role := string(sess.Role)
+	if role == "" {
+		role = string(RoleGuest)
+	}
 	cart := cartToJSON(sess.Cart)
 	csrf := sess.CSRFToken
 	sess.mu.RUnlock()
 
 	_, err := s.db.Exec(`
-		INSERT INTO sessions (id, shop_id, cart, csrf_token, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (id) DO UPDATE SET shop_id = $2, cart = $3, csrf_token = $4, expires_at = $5`,
-		sess.ID, shopID, cart, csrf, sessionExpiry(),
+		INSERT INTO sessions (id, shop_id, admin_id, driver_id, role, cart, csrf_token, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO UPDATE SET shop_id=$2, admin_id=$3, driver_id=$4, role=$5, cart=$6, csrf_token=$7, expires_at=$8`,
+		sess.ID, shopID, adminID, driverID, role, cart, csrf, sessionExpiry(),
 	)
 	if err != nil {
 		logError("session save failed", err.Error())
@@ -272,10 +288,11 @@ func (s *Store) CleanExpiredSessions() {
 
 // --- Orders ---
 
-func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) (*Order, error) {
-	if status == StatusLlegado {
+func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus, changedBy string) (*Order, error) {
+	isComplete := status == StatusLlegado || status == StatusLlegadoLegacy || status == StatusNoEntregado
+	if isComplete {
 		_, err := s.db.Exec(
-			`UPDATE orders SET status = $1, delivered_at = now() WHERE id = $2`,
+			`UPDATE orders SET status = $1, delivered_at = COALESCE(delivered_at, now()), completed_at = COALESCE(completed_at, now()) WHERE id = $2`,
 			string(status), orderID,
 		)
 		if err != nil {
@@ -287,6 +304,7 @@ func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus) (*Order, e
 			return nil, err
 		}
 	}
+	s.RecordOrderStatus(orderID, status, changedBy, "")
 	return s.Order(orderID)
 }
 
@@ -496,13 +514,13 @@ func (s *Store) UpdatePart(id, makeStr, model, category, name, source string, ye
 
 func scanShop(row *sql.Row) (*Shop, error) {
 	sh := &Shop{}
-	err := row.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address,
+	err := row.Scan(&sh.ID, &sh.Name, &sh.Username, &sh.Owner, &sh.Phone, &sh.Address,
 		&sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PaymentSplits, &sh.ReminderDays,
 		&sh.PasswordDemo, &sh.Approved, &sh.Active)
 	return sh, err
 }
 
-const shopColumns = `id, name, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active`
+const shopColumns = `id, name, username, owner, phone, address, credit_limit, credit_used, credit_terms, payment_splits, reminder_days, password_demo, approved, active`
 
 func (s *Store) Shop(id string) (*Shop, bool) {
 	sh, err := scanShop(s.db.QueryRow(
@@ -543,7 +561,7 @@ func (s *Store) queryShops(q string) []*Shop {
 	var shops []*Shop
 	for rows.Next() {
 		sh := &Shop{}
-		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Owner, &sh.Phone, &sh.Address,
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Username, &sh.Owner, &sh.Phone, &sh.Address,
 			&sh.CreditLimit, &sh.CreditUsed, &sh.CreditTerms, &sh.PaymentSplits, &sh.ReminderDays,
 			&sh.PasswordDemo, &sh.Approved, &sh.Active); err == nil {
 			shops = append(shops, sh)

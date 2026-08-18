@@ -20,41 +20,6 @@ func checkPassword(stored, plain string) bool {
 	return subtle.ConstantTimeCompare([]byte(stored), []byte(plain)) == 1
 }
 
-func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		want := os.Getenv("ADMIN_PASSWORD")
-		if want == "" {
-			http.Error(w, "ADMIN_PASSWORD no configurado", http.StatusInternalServerError)
-			return
-		}
-		_, pass, ok := r.BasicAuth()
-		if !ok || pass != want {
-			w.Header().Set("WWW-Authenticate", `Basic realm="admin"`)
-			http.Error(w, "no autorizado", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
-func requireDriver(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		want := os.Getenv("DRIVER_PASSWORD")
-		if want == "" {
-			// Fall back to admin password if driver password not set.
-			requireAdmin(next)(w, r)
-			return
-		}
-		_, pass, ok := r.BasicAuth()
-		if !ok || pass != want {
-			w.Header().Set("WWW-Authenticate", `Basic realm="driver"`)
-			http.Error(w, "no autorizado", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
 func validateCSRF(r *http.Request, s *Session) bool {
 	if s == nil {
 		return false
