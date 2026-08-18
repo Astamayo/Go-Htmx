@@ -34,7 +34,6 @@
         {{else if eq .Role "shop"}}
           <a href="/tienda/pedidos" class="hover:text-[#C99A5B]">Pedidos</a>
           <a href="/tienda/entregas" class="hover:text-[#C99A5B]">Entregas</a>
-          <a href="/tienda/inventario" class="hover:text-[#C99A5B]">Inventario</a>
           <a href="/catalogo" class="hover:text-[#C99A5B]">Catálogo</a>
           {{template "cart_badge" .CartCount}}
           {{if .Shop}}<span class="text-stone-300">{{.Shop.Name}}</span>{{end}}
@@ -47,7 +46,6 @@
           <a href="/buscar" class="hover:text-[#C99A5B]">Buscar</a>
           {{template "cart_badge" .CartCount}}
           <a href="/login" class="hover:text-[#C99A5B]">Taller</a>
-          <a href="/admin/login" class="text-stone-400 hover:text-[#C99A5B] text-xs">Admin</a>
         {{end}}
       </div>
     </div>

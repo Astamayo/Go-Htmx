@@ -953,7 +953,6 @@ func main() {
 	mux.HandleFunc("GET /tienda/pedidos/historial", requireShop(handleTiendaHistorial))
 	mux.HandleFunc("GET /tienda/pedidos/{id}", requireShop(handleTiendaOrderDetail))
 	mux.HandleFunc("GET /tienda/entregas", requireShop(handleTiendaEntregas))
-	mux.HandleFunc("GET /tienda/inventario", requireShop(handleTiendaInventario))
 
 	mux.HandleFunc("GET /admin", requireAdmin(handleAdmin))
 	mux.HandleFunc("GET /admin/reports", requireAdmin(handleAdminReports))

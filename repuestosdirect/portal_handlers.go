@@ -56,15 +56,6 @@ func handleTiendaEntregas(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleTiendaInventario(w http.ResponseWriter, r *http.Request) {
-	s := getSession(w, r)
-	sh := currentShop(s)
-	render(w, r, "page_tienda_inventario", PageData{
-		Title: "Inventario", Shop: sh, CartCount: cartCount(s),
-		Data: inventoryData{StockRows: store.StockReport(), LowStock: store.LowStockParts()},
-	})
-}
-
 func handleDriverStatus(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	orderID := r.FormValue("order_id")

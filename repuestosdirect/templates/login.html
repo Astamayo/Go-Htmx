@@ -1,7 +1,7 @@
 {{define "page_login"}}{{template "header" .}}
 <div class="max-w-sm mx-auto mt-10 bg-white border border-stone-200 rounded-lg p-6 shadow-sm">
   <h1 class="text-xl font-bold text-[#1B2A4A] mb-1">Entrar — Taller</h1>
-  <p class="text-sm text-stone-500 mb-5">Acceso para talleres: pedidos, entregas e inventario.</p>
+  <p class="text-sm text-stone-500 mb-5">Acceso para empleados del taller — pedidos y entregas. Usa el usuario que te asignó el administrador.</p>
 
   {{if .Error}}
   <div class="mb-4 text-sm bg-red-50 text-red-700 border border-red-200 rounded px-3 py-2">{{.Error}}</div>
@@ -25,6 +25,6 @@
   </form>
 
   <p class="text-xs text-stone-400 mt-4">¿Nuevo taller? <a href="/signup" class="text-[#1B2A4A] underline font-semibold">Crea tu cuenta</a></p>
-  <p class="text-xs text-stone-400 mt-2"><a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública</a> · <a href="/admin/login" class="underline">Admin</a> · <a href="/driver/login" class="underline">Repartidor</a></p>
+  <p class="text-xs text-stone-400 mt-2"><a href="/catalogo" class="text-[#1B2A4A] underline">Búsqueda pública</a></p>
 </div>
 {{template "footer" .}}{{end}}
