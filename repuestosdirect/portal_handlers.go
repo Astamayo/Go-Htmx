@@ -69,6 +69,9 @@ func handleDriverStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no autorizado", http.StatusForbidden)
 		return
 	}
+	if newStatus == StatusEnCamino && order.DriverID == "" {
+		store.AssignDriverToOrder(orderID, s.driverID())
+	}
 	if _, err := store.UpdateOrderStatus(orderID, newStatus, actorLabel(s)); err != nil {
 		logError("driver status failed", err.Error())
 	}

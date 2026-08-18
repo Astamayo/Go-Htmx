@@ -497,6 +497,24 @@ func (s *Store) AssignCourierAndDriver(orderID, courier, driverID string) error 
 	return err
 }
 
+func (s *Store) DriverActiveOrders(driverID string) []*Order {
+	rows, err := s.db.Query(`
+		SELECT id, shop_id, total, on_credit, status, placed_at, due_date
+		FROM orders
+		WHERE shop_id IS NOT NULL AND `+activeOrderFilter+`
+		AND status IN ('Listo para recoger', 'En camino')
+		AND (
+			driver_id = $1
+			OR (COALESCE(driver_id, '') = '' AND status = 'Listo para recoger')
+		)
+		ORDER BY placed_at ASC`, driverID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanOrders(rows, s)
+}
+
 func (s *Store) DriverReadyOrders() []*Order {
 	rows, err := s.db.Query(`
 		SELECT id, shop_id, total, on_credit, status, placed_at, due_date

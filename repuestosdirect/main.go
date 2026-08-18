@@ -788,6 +788,13 @@ func handleDriverDeliver(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/driver", http.StatusSeeOther)
 		return
 	}
+	if order.DriverID != "" && order.DriverID != s.driverID() {
+		http.Redirect(w, r, "/driver", http.StatusSeeOther)
+		return
+	}
+	if order.DriverID == "" {
+		store.AssignDriverToOrder(orderID, s.driverID())
+	}
 	if _, err := store.UpdateOrderStatus(orderID, status, actorLabel(s)); err != nil {
 		logError("driver deliver failed", err.Error())
 	}
@@ -803,13 +810,7 @@ func handleDriverDashboard(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	driverID := s.driverID()
 	var routes []DriverRoute
-	orders := store.DriverAssignedOrders(driverID)
-	if len(orders) == 0 {
-		for _, o := range store.DriverReadyOrders() {
-			orders = append(orders, o)
-		}
-	}
-	for _, o := range orders {
+	for _, o := range store.DriverActiveOrders(driverID) {
 		sh, ok := store.Shop(o.ShopID)
 		if !ok {
 			continue
