@@ -183,6 +183,7 @@ func (s *Store) initTables() error {
 		`ALTER TABLE parts ADD COLUMN IF NOT EXISTS reorder_point INT NOT NULL DEFAULT 5`,
 		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS courier VARCHAR(20) NOT NULL DEFAULT ''`,
 		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`,
+		`ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
 		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS address VARCHAR(500) NOT NULL DEFAULT ''`,
 		`ALTER TABLE shops ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE`,
@@ -299,20 +300,21 @@ func (s *Store) CleanExpiredSessions() {
 // --- Orders ---
 
 func (s *Store) UpdateOrderStatus(orderID string, status OrderStatus, changedBy string) (*Order, error) {
-	isComplete := status == StatusLlegado || status == StatusLlegadoLegacy || status == StatusNoEntregado
+	isComplete := isOrderComplete(status)
+	var err error
 	if isComplete {
-		_, err := s.db.Exec(
-			`UPDATE orders SET status = $1, delivered_at = COALESCE(delivered_at, now()), completed_at = COALESCE(completed_at, now()) WHERE id = $2`,
+		_, err = s.db.Exec(
+			`UPDATE orders SET status = $1, delivered_at = COALESCE(delivered_at, now()) WHERE id = $2`,
 			string(status), orderID,
 		)
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		_, err := s.db.Exec(`UPDATE orders SET status = $1 WHERE id = $2`, string(status), orderID)
-		if err != nil {
-			return nil, err
-		}
+		_, err = s.db.Exec(`UPDATE orders SET status = $1 WHERE id = $2`, string(status), orderID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if isComplete {
+		s.db.Exec(`UPDATE orders SET completed_at = COALESCE(completed_at, now()) WHERE id = $1`, orderID)
 	}
 	s.RecordOrderStatus(orderID, status, changedBy, "")
 	return s.Order(orderID)

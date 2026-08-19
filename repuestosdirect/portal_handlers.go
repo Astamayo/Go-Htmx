@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 )
 
@@ -60,27 +61,40 @@ func handleDriverStatus(w http.ResponseWriter, r *http.Request) {
 	s := getSession(w, r)
 	orderID := r.FormValue("order_id")
 	newStatus := OrderStatus(r.FormValue("status"))
+	if orderID == "" || newStatus == "" {
+		http.Redirect(w, r, "/driver?error="+url.QueryEscape("Datos de entrega inválidos"), http.StatusSeeOther)
+		return
+	}
 	order, err := store.Order(orderID)
 	if err != nil {
-		http.Redirect(w, r, "/driver", http.StatusSeeOther)
+		http.Redirect(w, r, "/driver?error="+url.QueryEscape("Pedido no encontrado"), http.StatusSeeOther)
 		return
 	}
 	if order.DriverID != "" && order.DriverID != s.driverID() {
-		http.Error(w, "no autorizado", http.StatusForbidden)
+		http.Redirect(w, r, "/driver?error="+url.QueryEscape("Este pedido está asignado a otro repartidor"), http.StatusSeeOther)
 		return
 	}
-	if newStatus == StatusEnCamino && order.DriverID == "" {
+	if order.DriverID == "" {
 		store.AssignDriverToOrder(orderID, s.driverID())
 	}
 	if _, err := store.UpdateOrderStatus(orderID, newStatus, actorLabel(s)); err != nil {
 		logError("driver status failed", err.Error())
+		http.Redirect(w, r, "/driver?error="+url.QueryEscape("No se pudo actualizar el estado"), http.StatusSeeOther)
+		return
 	}
 	if order.ShopID != "" {
 		if sh, ok := store.Shop(order.ShopID); ok {
-			notifyOrderStatus(sh.Phone, orderID, string(newStatus))
+			notifyOrderStatus(sh.Phone, orderID, driverStatusNotifyLabel(newStatus))
 		}
 	}
-	http.Redirect(w, r, "/driver", http.StatusSeeOther)
+	http.Redirect(w, r, "/driver?ok="+url.QueryEscape(string(newStatus)), http.StatusSeeOther)
+}
+
+func driverStatusNotifyLabel(status OrderStatus) string {
+	if status == StatusLlegado || status == StatusLlegadoLegacy {
+		return "Entregado"
+	}
+	return string(status)
 }
 
 type tiendaOrdersData struct {

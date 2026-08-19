@@ -3,7 +3,18 @@
 
 <div class="max-w-md mx-auto">
     <h1 class="text-2xl font-bold text-[#1B2A4A] mb-1">Mis entregas</h1>
-    <p class="text-sm text-stone-500 mb-6">Actualiza el estado de cada pedido asignado.</p>
+    <p class="text-sm text-stone-500 mb-4">Actualiza el estado de cada pedido asignado.</p>
+
+    {{if .Success}}
+    <div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-lg px-4 py-3">
+        Pedido marcado como <strong>{{.Success}}</strong>.
+    </div>
+    {{end}}
+    {{if .Error}}
+    <div class="mb-4 bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
+        {{.Error}}
+    </div>
+    {{end}}
 
     <div class="space-y-4">
         {{if not .DriverRoutes}}
@@ -25,19 +36,19 @@
                     {{template "csrf" $}}
                     <input type="hidden" name="order_id" value="{{.Order.ID}}">
                     <input type="hidden" name="status" value="En camino">
-                    <button class="w-full bg-amber-500 text-white py-2 rounded text-sm font-semibold">En camino</button>
+                    <button type="submit" class="w-full bg-amber-500 text-white py-2 rounded text-sm font-semibold">En camino</button>
                 </form>
-                <form action="/driver/deliver" method="POST" class="flex-1 min-w-[100px]">
+                <form action="/driver/status" method="POST" class="flex-1 min-w-[100px]">
                     {{template "csrf" $}}
                     <input type="hidden" name="order_id" value="{{.Order.ID}}">
                     <input type="hidden" name="status" value="Entregado">
-                    <button class="w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold">Entregado</button>
+                    <button type="submit" class="w-full bg-emerald-600 text-white py-2 rounded text-sm font-semibold">Entregado</button>
                 </form>
-                <form action="/driver/deliver" method="POST" class="flex-1 min-w-[100px]">
+                <form action="/driver/status" method="POST" class="flex-1 min-w-[100px]">
                     {{template "csrf" $}}
                     <input type="hidden" name="order_id" value="{{.Order.ID}}">
                     <input type="hidden" name="status" value="No se pudo entregar">
-                    <button class="w-full bg-red-100 text-red-700 py-2 rounded text-sm">No entregado</button>
+                    <button type="submit" class="w-full bg-red-100 text-red-700 py-2 rounded text-sm">No entregado</button>
                 </form>
             </div>
         </div>

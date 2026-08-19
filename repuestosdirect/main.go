@@ -83,7 +83,10 @@ type DriverRoute struct {
 	Order *Order
 	Shop  *Shop
 }
-type driverData struct{ Routes []DriverRoute }
+type driverData struct {
+	Routes  []DriverRoute
+	Success string
+}
 
 type catalogData struct{ Makes []string }
 type loginData struct{ Shops []*Shop }
@@ -125,6 +128,7 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		Role            string
 		CartCount       int
 		Error           string
+		Success         string
 		CSRFToken       string
 		Makes           []string
 		Shops           []*Shop
@@ -210,6 +214,7 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		c.History = d.History
 	case driverData:
 		c.DriverRoutes = d.Routes
+		c.Success = d.Success
 	case searchData:
 		c.Query = d.Query
 		c.Parts = d.Parts
@@ -839,33 +844,7 @@ func handleAdminShopRemove(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleDriverDeliver(w http.ResponseWriter, r *http.Request) {
-	s := getSession(w, r)
-	orderID := r.FormValue("order_id")
-	status := OrderStatus(r.FormValue("status"))
-	if status == "" {
-		status = StatusLlegado
-	}
-	order, err := store.Order(orderID)
-	if err != nil {
-		http.Redirect(w, r, "/driver", http.StatusSeeOther)
-		return
-	}
-	if order.DriverID != "" && order.DriverID != s.driverID() {
-		http.Redirect(w, r, "/driver", http.StatusSeeOther)
-		return
-	}
-	if order.DriverID == "" {
-		store.AssignDriverToOrder(orderID, s.driverID())
-	}
-	if _, err := store.UpdateOrderStatus(orderID, status, actorLabel(s)); err != nil {
-		logError("driver deliver failed", err.Error())
-	}
-	if order.ShopID != "" && (status == StatusLlegado || status == StatusLlegadoLegacy) {
-		if sh, ok := store.Shop(order.ShopID); ok {
-			notifyOrderStatus(sh.Phone, orderID, "Entregado")
-		}
-	}
-	http.Redirect(w, r, "/driver", http.StatusSeeOther)
+	handleDriverStatus(w, r)
 }
 
 func handleDriverDashboard(w http.ResponseWriter, r *http.Request) {
@@ -881,7 +860,8 @@ func handleDriverDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	render(w, r, "page_driver", PageData{
 		Title: "Ruta de Repartidor", CartCount: cartCount(s),
-		Data: driverData{Routes: routes},
+		Error: r.URL.Query().Get("error"),
+		Data:  driverData{Routes: routes, Success: r.URL.Query().Get("ok")},
 	})
 }
 
