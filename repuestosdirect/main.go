@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var store *Store
@@ -101,7 +102,11 @@ type dashboardData struct {
 	Orders          []*Order
 	CreditAvailable float64
 }
-type confirmData struct{ Order *Order }
+type confirmData struct {
+	Order      *Order
+	PaymentRef string
+	NCF        string
+}
 type adminData struct {
 	Rows         []AgingInstallmentRow
 	Summary      ReportSummary
@@ -134,6 +139,9 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		ShopPhone       string
 		Installments    []Installment
 		History         []StatusHistoryEntry
+		PaymentRef      string
+		NCF             string
+		LegalSlug       string
 		Rows            []AgingInstallmentRow
 		StockRows       []StockRow
 		LowStock        []StockRow
@@ -175,6 +183,8 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 		c.CreditAvailable = d.CreditAvailable
 	case confirmData:
 		c.Order = d.Order
+		c.PaymentRef = d.PaymentRef
+		c.NCF = d.NCF
 	case adminData:
 		c.Rows = d.Rows
 		c.Summary = d.Summary
@@ -223,6 +233,8 @@ func render(w http.ResponseWriter, r *http.Request, page string, pd PageData) {
 	case shopFormData:
 		c.Shop = &d.Shop
 		c.IsEdit = d.IsEdit
+	case legalPageData:
+		c.LegalSlug = d.Slug
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, page, c); err != nil {
@@ -395,53 +407,103 @@ func handleOrderPlace(w http.ResponseWriter, r *http.Request) {
 	sh := currentShop(s)
 	payment := r.FormValue("payment")
 
-	var items []OrderItem
-	for pid, qty := range s.cartCopy() {
-		p, ok := store.Part(pid)
-		if !ok {
-			continue
-		}
-		items = append(items, OrderItem{PartID: p.ID, PartName: p.Name, Qty: qty, UnitUSD: p.PriceUSD})
-	}
-	if len(items) == 0 {
+	items, total, err := parseCheckoutItems(s)
+	if err != nil {
 		http.Redirect(w, r, "/catalogo", http.StatusSeeOther)
 		return
 	}
 
 	shopID := ""
 	onCredit := false
+	phone := strings.TrimSpace(r.FormValue("customer_phone"))
+	owner := strings.TrimSpace(r.FormValue("cardholder_name"))
 	if sh != nil {
 		shopID = sh.ID
+		phone = sh.Phone
+		owner = sh.Owner
 		onCredit = payment == "credit"
 	}
 
-	order, err := store.PlaceOrder(shopID, items, onCredit)
-	if err != nil {
-		cd := buildCartData(s, sh)
-		render(w, r, "page_cart", PageData{
-			Title: "Carrito", Shop: sh, CartCount: cartCount(s),
-			Error: err.Error(), Data: cd,
+	if !onCredit {
+		if r.FormValue("accept_terms") != "on" {
+			renderCartError(w, r, s, sh, "Debe aceptar los términos y condiciones.")
+			return
+		}
+		orderID, err := store.ReserveOrderID()
+		if err != nil {
+			renderCartError(w, r, s, sh, "Error al iniciar pago.")
+			return
+		}
+		card, err := parseCardFromRequest(r)
+		if err != nil {
+			renderCartError(w, r, s, sh, err.Error())
+			return
+		}
+		card.CustomerPhone = phone
+		result, err := processCardPayment(orderID, total, card)
+		if err != nil {
+			msg := err.Error()
+			if result != nil && result.ResponseMessage != "" {
+				msg = result.ResponseMessage
+			}
+			if result != nil {
+				_ = store.RecordPaymentTransaction(orderID, result, total, "declined")
+			}
+			renderCartError(w, r, s, sh, "Pago rechazado: "+msg)
+			return
+		}
+		order, err := store.PlaceOrderWithPayment(shopID, items, false, orderID, "card", "captured", result.TransactionID)
+		if err != nil {
+			renderCartError(w, r, s, sh, err.Error())
+			return
+		}
+		_ = store.RecordPaymentTransaction(orderID, result, total, "captured")
+		s.clearCart()
+		ncfNum := ""
+		if ncf, ncfErr := store.IssueNCFReceipt(order.ID, r.FormValue("customer_rnc")); ncfErr == nil {
+			ncfNum = ncf
+		}
+		if phone != "" {
+			notifyOrderConfirmed(phone, owner, order.ID, order.Total, false)
+		}
+		render(w, r, "page_confirmation", PageData{
+			Title: "Pedido confirmado", Shop: sh, CartCount: 0,
+			Data: confirmData{Order: order, PaymentRef: result.AuthorizationCode, NCF: ncfNum},
 		})
 		return
 	}
 
-	s.clearCart()
-
-	if sh != nil {
-		msg := "Hola " + sh.Owner + ", tu pedido " + order.ID + " por $" + strconv.FormatFloat(order.Total, 'f', 2, 64) + " fue confirmado."
-		if order.OnCredit {
-			msg += " Plan de pago: " + creditTermsLabel(sh.CreditTerms, sh.PaymentSplits) + "."
-			for _, inst := range store.InstallmentsForOrder(order.ID) {
-				msg += fmt.Sprintf(" Cuota %d: $%.2f vence %s.", inst.Num, inst.Amount, inst.DueDate.Format("02/01/2006"))
-			}
+	if onCredit {
+		if r.FormValue("accept_terms") != "on" {
+			renderCartError(w, r, s, sh, "Debe aceptar los términos y condiciones.")
+			return
 		}
-		msg += " Estado: " + string(order.Status) + "."
-		SendWhatsApp(sh.Phone, msg)
+		order, err := store.PlaceOrderWithPayment(shopID, items, true, "", "credit", "pending", "")
+		if err != nil {
+			renderCartError(w, r, s, sh, err.Error())
+			return
+		}
+
+		s.clearCart()
+
+		if sh != nil {
+			notifyOrderConfirmed(sh.Phone, sh.Owner, order.ID, order.Total, true)
+		}
+
+		render(w, r, "page_confirmation", PageData{
+			Title: "Pedido confirmado", Shop: sh, CartCount: 0,
+			Data: confirmData{Order: order},
+		})
+		return
 	}
 
-	render(w, r, "page_confirmation", PageData{
-		Title: "Pedido confirmado", Shop: sh, CartCount: 0,
-		Data: confirmData{Order: order},
+	renderCartError(w, r, s, sh, "método de pago inválido")
+}
+
+func renderCartError(w http.ResponseWriter, r *http.Request, s *Session, sh *Shop, msg string) {
+	render(w, r, "page_cart", PageData{
+		Title: "Carrito", Shop: sh, CartCount: cartCount(s),
+		Error: msg, Data: buildCartData(s, sh),
 	})
 }
 
@@ -800,7 +862,7 @@ func handleDriverDeliver(w http.ResponseWriter, r *http.Request) {
 	}
 	if order.ShopID != "" && (status == StatusLlegado || status == StatusLlegadoLegacy) {
 		if sh, ok := store.Shop(order.ShopID); ok {
-			SendWhatsApp(sh.Phone, "Tu pedido "+orderID+" fue entregado. ¡Gracias!")
+			notifyOrderStatus(sh.Phone, orderID, "Entregado")
 		}
 	}
 	http.Redirect(w, r, "/driver", http.StatusSeeOther)
@@ -877,8 +939,7 @@ func handleAdminOrderStatus(w http.ResponseWriter, r *http.Request) {
 
 	if order != nil && order.ShopID != "" {
 		if sh, ok := store.Shop(order.ShopID); ok {
-			msg := "Actualización pedido " + orderID + ": ahora está en estado \"" + string(newStatus) + "\"."
-			SendWhatsApp(sh.Phone, msg)
+			notifyOrderStatus(sh.Phone, orderID, string(newStatus))
 		}
 	}
 
@@ -931,7 +992,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /{$}", handleHome)
 	mux.HandleFunc("GET /catalogo", handleCatalog)
-	mux.HandleFunc("GET /buscar", handleSearch)
+	mux.HandleFunc("GET /buscar", rateLimit(60, time.Minute)(handleSearch))
 	mux.HandleFunc("GET /partials/models", handlePartialModels)
 	mux.HandleFunc("GET /partials/years", handlePartialYears)
 	mux.HandleFunc("GET /partials/parts", handlePartialParts)
@@ -940,7 +1001,7 @@ func main() {
 	mux.HandleFunc("POST /cart/remove", requirePOST(handleCartRemove))
 	mux.HandleFunc("POST /cart/update", requirePOST(handleCartUpdate))
 	mux.HandleFunc("GET /carrito", handleCartPage)
-	mux.HandleFunc("POST /order/place", requirePOST(handleOrderPlace))
+	mux.HandleFunc("POST /order/place", rateLimit(10, time.Minute)(requirePOST(handleOrderPlace)))
 	mux.HandleFunc("GET /login", handleLoginGet)
 	mux.HandleFunc("POST /login", requirePOST(handleLoginPost))
 	mux.HandleFunc("GET /logout", handleLogout)
@@ -989,7 +1050,13 @@ func main() {
 	mux.HandleFunc("GET /dashboard", handleDashboard)
 	mux.HandleFunc("GET /pedido/{id}", handleOrderDetail)
 	mux.HandleFunc("GET /signup", handleSignupGet)
-	mux.HandleFunc("POST /signup", requirePOST(handleSignupPost))
+	mux.HandleFunc("POST /signup", rateLimit(5, time.Minute)(requirePOST(handleSignupPost)))
+
+	mux.HandleFunc("GET /legal/terms", handleLegalTerms)
+	mux.HandleFunc("GET /legal/privacy", handleLegalPrivacy)
+	mux.HandleFunc("GET /legal/refund", handleLegalRefund)
+	mux.HandleFunc("GET /webhooks/whatsapp", handleWhatsAppWebhook)
+	mux.HandleFunc("POST /webhooks/whatsapp", handleWhatsAppWebhook)
 
 	port := os.Getenv("PORT")
 	if port == "" {

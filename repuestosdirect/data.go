@@ -210,7 +210,10 @@ func (s *Store) initTables() error {
 			return err
 		}
 	}
-	return s.initAuthTables()
+	if err := s.initAuthTables(); err != nil {
+		return err
+	}
+	return s.initPaymentTables()
 }
 
 func (s *Store) seedInitialData() {
@@ -684,6 +687,10 @@ func (s *Store) AddPart(makeStr, model, category, name, source string, year, sto
 }
 
 func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Order, error) {
+	return s.PlaceOrderWithPayment(shopID, items, onCredit, "", "", "", "")
+}
+
+func (s *Store) PlaceOrderWithPayment(shopID string, items []OrderItem, onCredit bool, orderID, paymentMethod, paymentStatus, paymentRef string) (*Order, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -748,11 +755,13 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	}
 
 	var seq int
-	err = tx.QueryRow("SELECT nextval('order_id_seq')").Scan(&seq)
-	if err != nil {
-		return nil, fmt.Errorf("error generating order id: %w", err)
+	if orderID == "" {
+		err = tx.QueryRow("SELECT nextval('order_id_seq')").Scan(&seq)
+		if err != nil {
+			return nil, fmt.Errorf("error generating order id: %w", err)
+		}
+		orderID = fmt.Sprintf("ORD-%04d", seq)
 	}
-	orderID := fmt.Sprintf("ORD-%04d", seq)
 
 	placedAt := time.Now()
 	dueDate := placedAt
@@ -767,8 +776,10 @@ func (s *Store) PlaceOrder(shopID string, items []OrderItem, onCredit bool) (*Or
 	}
 
 	_, err = tx.Exec(
-		"INSERT INTO orders (id, shop_id, total, on_credit, status, placed_at, due_date) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+		`INSERT INTO orders (id, shop_id, total, on_credit, status, placed_at, due_date, payment_method, payment_status, payment_ref, paid_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		orderID, nullShopID, total, onCredit, status, placedAt, dueDate,
+		paymentMethod, paymentStatus, paymentRef, paidAtVal(onCredit, paymentStatus),
 	)
 	if err != nil {
 		return nil, err
@@ -903,4 +914,11 @@ func (s *Store) getOrderItems(orderID string) []OrderItem {
 		}
 	}
 	return items
+}
+
+func paidAtVal(onCredit bool, paymentStatus string) sql.NullTime {
+	if onCredit || paymentStatus != "captured" {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: time.Now(), Valid: true}
 }

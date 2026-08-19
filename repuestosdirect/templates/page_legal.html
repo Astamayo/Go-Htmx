@@ -1,0 +1,22 @@
+{{define "page_legal"}}{{template "header" .}}
+<div class="max-w-2xl mx-auto bg-white border border-stone-200 rounded-lg p-6 prose prose-sm prose-stone">
+  {{if eq .LegalSlug "terms"}}
+  <h1>Términos y condiciones</h1>
+  <p>Al usar RepuestosDirect usted acepta estos términos. Los precios están en USD. Los pedidos están sujetos a disponibilidad de inventario.</p>
+  <p>El pago con tarjeta se procesa a través de Azul (Banco Popular). Los pedidos a crédito están sujetos a aprobación y límites asignados por administración.</p>
+  <p>Repuestos importados pueden requerir documentación aduanera. Los plazos de entrega son estimados.</p>
+  {{else if eq .LegalSlug "privacy"}}
+  <h1>Política de privacidad</h1>
+  <p>Recopilamos datos de contacto del taller (nombre, teléfono, dirección) y datos de pedido. No almacenamos números de tarjeta ni CVV — el procesador de pagos maneja esa información.</p>
+  <p>Usamos WhatsApp Business para notificaciones de pedido con su consentimiento implícito al registrarse.</p>
+  <p>Para solicitar eliminación de datos, contacte al administrador de la plataforma.</p>
+  {{else if eq .LegalSlug "refund"}}
+  <h1>Devoluciones y reembolsos</h1>
+  <p>Las piezas incorrectas o defectuosas pueden devolverse dentro de 7 días hábiles con empaque original y factura/NCF.</p>
+  <p>Repuestos eléctricos, sensores y piezas especiales no son retornables una vez instaladas.</p>
+  <p>Los reembolsos a tarjeta se procesan en 5-10 días hábiles al mismo método de pago.</p>
+  <p>Para iniciar una devolución, contacte a su taller registrado o al soporte de RepuestosDirect.</p>
+  {{end}}
+  <p class="text-xs text-stone-400 mt-8"><a href="/catalogo">← Volver al catálogo</a></p>
+</div>
+{{template "footer" .}}{{end}}

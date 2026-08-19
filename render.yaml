@@ -13,11 +13,33 @@ services:
           property: connectionString
       - key: ADMIN_PASSWORD
         sync: false
-      - key: DRIVER_PASSWORD
+      - key: AZUL_MERCHANT_ID
         sync: false
+      - key: AZUL_AUTH1
+        sync: false
+      - key: AZUL_AUTH2
+        sync: false
+      - key: AZUL_ENVIRONMENT
+        value: sandbox
+      - key: AZUL_ECOMMERCE_URL
+        sync: false
+      - key: MIN_CREDIT_ORDER
+        value: "50"
       - key: WHATSAPP_TOKEN
         sync: false
       - key: WHATSAPP_PHONE_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_USE_TEMPLATES
+        value: "false"
+      - key: WHATSAPP_TEMPLATE_ORDER_CONFIRM
+        sync: false
+      - key: WHATSAPP_TEMPLATE_ORDER_STATUS
+        sync: false
+      - key: WHATSAPP_TEMPLATE_PAYMENT_REMINDER
         sync: false
       - key: DRIVER_PHONE
         sync: false

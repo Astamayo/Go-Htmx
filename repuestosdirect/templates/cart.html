@@ -39,31 +39,91 @@
       <div class="bg-stone-50 border border-stone-200 rounded-lg p-4 mb-5 text-sm">
         <p class="font-semibold text-stone-700 mb-1">Crédito de {{.Shop.Name}}</p>
         <p class="text-stone-500">Disponible: <span class="font-semibold text-emerald-600">${{printf "%.2f" .CreditAvailable}}</span> · Mínimo a crédito: ${{printf "%.0f" .MinCredit}}</p>
-        <p class="text-stone-500 text-xs mt-1">Plan: {{creditTermsLabel .Shop.CreditTerms .Shop.PaymentSplits}}</p>
       </div>
 
-      <form method="POST" action="/order/place" class="flex flex-wrap gap-3 items-center">
+      <form method="POST" action="/order/place" id="checkout-form" class="space-y-4">
         {{template "csrf" .}}
-        <label class="text-sm flex items-center gap-2">
-          <input type="radio" name="payment" value="cash" checked> Pagar de contado
+        <div class="flex flex-wrap gap-4 text-sm">
+          <label class="flex items-center gap-2">
+            <input type="radio" name="payment" value="card" checked onchange="toggleCredit(false)"> Tarjeta débito/crédito
+          </label>
+          <label class="flex items-center gap-2 {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}opacity-40{{end}}">
+            <input type="radio" name="payment" value="credit" {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}disabled{{end}} onchange="toggleCredit(true)"> Comprar a crédito (mín. ${{printf "%.0f" .MinCredit}})
+          </label>
+        </div>
+        {{template "card_fields" .}}
+        <label class="flex items-start gap-2 text-xs text-stone-600">
+          <input type="checkbox" name="accept_terms" id="accept_terms" class="mt-0.5" required>
+          <span>Acepto los <a href="/legal/terms" target="_blank" class="underline">términos</a>, <a href="/legal/privacy" target="_blank" class="underline">privacidad</a> y <a href="/legal/refund" target="_blank" class="underline">política de devoluciones</a>.</span>
         </label>
-        <label class="text-sm flex items-center gap-2 {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}opacity-40{{end}}">
-          <input type="radio" name="payment" value="credit" {{if or (lt .CreditAvailable .Total) (lt .Total .MinCredit)}}disabled{{end}}> Comprar a crédito (mín. ${{printf "%.0f" .MinCredit}})
-        </label>
-        <button class="ml-auto bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">Confirmar pedido</button>
+        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">Pagar y confirmar</button>
       </form>
     {{else}}
-      <div class="text-sm bg-stone-50 border border-stone-200 rounded px-3 py-3 mb-3">
-        <p class="font-semibold mb-1">Checkout como invitado</p>
-        <p class="text-stone-500 text-xs">Pago de contado sin cuenta. Para crédito y seguimiento, <a href="/login" class="underline font-semibold">inicia sesión</a>.</p>
+      <div class="text-sm bg-blue-50 border border-blue-100 rounded px-3 py-3 mb-3">
+        <p class="font-semibold text-blue-900 mb-1">Pago con tarjeta — procesado de forma segura vía Azul</p>
+        <p class="text-blue-800 text-xs">Aceptamos Visa, Mastercard y American Express. Para crédito comercial, <a href="/login" class="underline font-semibold">inicia sesión</a> con tu taller.</p>
       </div>
-      <form method="POST" action="/order/place" class="flex flex-wrap gap-3">
+      <form method="POST" action="/order/place" class="space-y-4">
         {{template "csrf" .}}
-        <input type="hidden" name="payment" value="cash">
-        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded hover:bg-[#243560]">Confirmar pedido (invitado)</button>
-        <a href="/login" class="text-sm px-4 py-2 border border-stone-300 rounded">Entrar con cuenta</a>
+        <input type="hidden" name="payment" value="card">
+        {{template "card_fields" .}}
+        <label class="flex items-start gap-2 text-xs text-stone-600">
+          <input type="checkbox" name="accept_terms" required class="mt-0.5">
+          <span>Acepto los <a href="/legal/terms" target="_blank" class="underline">términos</a> y políticas.</span>
+        </label>
+        <button class="bg-[#1B2A4A] text-white text-sm font-semibold px-4 py-2 rounded">Pagar ${{printf "%.2f" .Total}}</button>
       </form>
     {{end}}
   {{end}}
 </div>
+<script>
+function toggleCredit(isCredit) {
+  var card = document.getElementById('card-section');
+  var terms = document.getElementById('accept_terms');
+  if (card) card.style.display = isCredit ? 'none' : 'block';
+  if (terms) terms.required = true;
+  card.querySelectorAll('input[required]').forEach(function(el) {
+    el.required = !isCredit;
+  });
+}
+</script>
 {{template "footer" .}}{{end}}
+
+{{define "card_fields"}}
+<div id="card-section" class="border border-stone-200 rounded-lg p-4 space-y-3 bg-stone-50">
+  <p class="text-xs font-semibold text-stone-600 uppercase tracking-wide">Datos de la tarjeta</p>
+  <div>
+    <label class="block text-xs text-stone-500 mb-1">Nombre del titular</label>
+    <input name="cardholder_name" required autocomplete="cc-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="Como aparece en la tarjeta">
+  </div>
+  <div>
+    <label class="block text-xs text-stone-500 mb-1">Número de tarjeta</label>
+    <input name="card_number" required autocomplete="cc-number" inputmode="numeric" class="w-full border rounded px-3 py-2 text-sm" placeholder="4111 1111 1111 1111">
+  </div>
+  <div class="grid grid-cols-3 gap-2">
+    <div>
+      <label class="block text-xs text-stone-500 mb-1">Mes</label>
+      <input name="card_exp_month" required autocomplete="cc-exp-month" maxlength="2" class="w-full border rounded px-3 py-2 text-sm" placeholder="MM">
+    </div>
+    <div>
+      <label class="block text-xs text-stone-500 mb-1">Año</label>
+      <input name="card_exp_year" required autocomplete="cc-exp-year" maxlength="4" class="w-full border rounded px-3 py-2 text-sm" placeholder="AAAA">
+    </div>
+    <div>
+      <label class="block text-xs text-stone-500 mb-1">CVC</label>
+      <input name="card_cvc" required autocomplete="cc-csc" maxlength="4" class="w-full border rounded px-3 py-2 text-sm" placeholder="123">
+    </div>
+  </div>
+  {{if not .Shop}}
+  <div>
+    <label class="block text-xs text-stone-500 mb-1">WhatsApp (opcional)</label>
+    <input name="customer_phone" class="w-full border rounded px-3 py-2 text-sm" placeholder="+1 809-555-0100">
+  </div>
+  <div>
+    <label class="block text-xs text-stone-500 mb-1">RNC (opcional, para comprobante fiscal)</label>
+    <input name="customer_rnc" class="w-full border rounded px-3 py-2 text-sm" placeholder="000-00000-0">
+  </div>
+  {{end}}
+  <p class="text-xs text-stone-400">No almacenamos datos de tarjeta. Procesado por Azul/CardNet.</p>
+</div>
+{{end}}

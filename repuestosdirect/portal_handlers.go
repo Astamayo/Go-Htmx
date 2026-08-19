@@ -77,7 +77,7 @@ func handleDriverStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if order.ShopID != "" {
 		if sh, ok := store.Shop(order.ShopID); ok {
-			SendWhatsApp(sh.Phone, "Actualización pedido "+orderID+": "+string(newStatus))
+			notifyOrderStatus(sh.Phone, orderID, string(newStatus))
 		}
 	}
 	http.Redirect(w, r, "/driver", http.StatusSeeOther)

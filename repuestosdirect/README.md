@@ -144,8 +144,19 @@ Por cada pedido:
 | `DATABASE_URL` | Sí | PostgreSQL connection string |
 | `ADMIN_PASSWORD` | Sí* | Contraseña inicial del usuario `admin` |
 | `MIN_CREDIT_ORDER` | No | Mínimo USD para compra a crédito (default `50`) |
-| `WHATSAPP_TOKEN` | No | Meta WhatsApp Cloud API token |
-| `WHATSAPP_PHONE_ID` | No | WhatsApp Business phone ID |
+| `AZUL_MERCHANT_ID` | Sí (prod) | ID comercio Azul |
+| `AZUL_AUTH1` / `AZUL_AUTH2` | Sí (prod) | Credenciales Auth de Azul |
+| `AZUL_ENVIRONMENT` | No | `sandbox`, `production`, o `mock` (dev) |
+| `AZUL_ECOMMERCE_URL` | No | URL de tu sitio para Azul |
+| `PAYMENT_GATEWAY` | No | `azul` (default) o `cardnet` |
+| `WHATSAPP_TOKEN` | Sí (prod) | Meta WhatsApp Cloud API token permanente |
+| `WHATSAPP_PHONE_ID` | Sí (prod) | WhatsApp Business phone ID |
+| `WHATSAPP_VERIFY_TOKEN` | No | Token verificación webhook Meta |
+| `WHATSAPP_APP_SECRET` | No | Firma webhook `X-Hub-Signature-256` |
+| `WHATSAPP_USE_TEMPLATES` | No | `true` para plantillas pre-aprobadas |
+| `WHATSAPP_TEMPLATE_ORDER_CONFIRM` | No | Nombre plantilla confirmación |
+| `WHATSAPP_TEMPLATE_ORDER_STATUS` | No | Nombre plantilla cambio estado |
+| `WHATSAPP_TEMPLATE_PAYMENT_REMINDER` | No | Nombre plantilla recordatorio pago |
 | `DRIVER_PHONE` | No | WhatsApp para alertas de pedidos listos |
 | `CRON_SECRET` | No | Secreto para cron de recordatorios de pago |
 | `PORT` | No | Puerto HTTP (default `8080`) |
@@ -153,7 +164,46 @@ Por cada pedido:
 
 \* Si no hay filas en tabla `admins`, se crea `admin` con esta contraseña al arrancar.
 
-Sin `WHATSAPP_*`, los mensajes se imprimen en consola (modo mock).
+Sin credenciales de pago/WhatsApp, el sistema usa **modo mock** (tarjetas de prueba, WhatsApp en consola).
+
+### Tarjetas de prueba (modo mock / sandbox)
+
+| Tarjeta | Resultado |
+|---------|-----------|
+| `4111111111111111` | Aprobada |
+| `4000000000000002` | Rechazada |
+
+---
+
+## Pre-lanzamiento (checklist)
+
+### Pagos Azul — listo en código
+1. Abrir cuenta comercio con Azul (Banco Popular) — 1-3 semanas
+2. Configurar `AZUL_MERCHANT_ID`, `AZUL_AUTH1`, `AZUL_AUTH2`, `AZUL_ENVIRONMENT=production`
+3. Probar en sandbox: cargo exitoso, rechazo, y que un rechazo **no** crea pedido
+4. Webhook Azul (opcional v2) para conciliación
+
+### WhatsApp — listo en código
+1. Meta Business + app WhatsApp Cloud API
+2. Token permanente + `WHATSAPP_PHONE_ID`
+3. Crear y aprobar plantillas Meta; set `WHATSAPP_USE_TEMPLATES=true`
+4. Webhook: `GET/POST /webhooks/whatsapp` con `WHATSAPP_VERIFY_TOKEN`
+
+### Infraestructura (pendiente operaciones)
+- **Fotos de piezas:** migrar `photo_url` a R2/S3 (Render filesystem es efímero)
+- **Backups Postgres:** confirmar plan Render o cron `pg_dump`
+- **Dominio propio:** agregar en Render → SSL automático
+- **Monitoreo:** Sentry u otro (no integrado aún)
+
+### Legal / negocio (parcial)
+- Páginas legales: `/legal/terms`, `/legal/privacy`, `/legal/refund` ✅
+- NCF: generación básica en pedidos con tarjeta (secuencial; integrar DGII formal v2)
+- RNC/DGA/SIGA: trámite comercial, no código
+
+### Post-lanzamiento (v2)
+- Devoluciones/garantía con tracking
+- Tarifas por zona de entrega
+- CardNet gateway completo (`PAYMENT_GATEWAY=cardnet`)
 
 ---
 
